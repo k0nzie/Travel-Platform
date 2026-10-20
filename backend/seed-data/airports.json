@@ -1,0 +1,163 @@
+[
+  {
+    "iataCode": "CAI",
+    "name": "Cairo International Airport",
+    "city": "Cairo",
+    "countryCode": "EG",
+    "timezone": "Africa/Cairo"
+  },
+  {
+    "iataCode": "SPX",
+    "name": "Sphinx International Airport",
+    "city": "Cairo",
+    "countryCode": "EG",
+    "timezone": "Africa/Cairo"
+  },
+  {
+    "iataCode": "HBE",
+    "name": "Borg El Arab Airport",
+    "city": "Alexandria",
+    "countryCode": "EG",
+    "timezone": "Africa/Cairo"
+  },
+  {
+    "iataCode": "LXR",
+    "name": "Luxor International Airport",
+    "city": "Luxor",
+    "countryCode": "EG",
+    "timezone": "Africa/Cairo"
+  },
+  {
+    "iataCode": "HRG",
+    "name": "Hurghada International Airport",
+    "city": "Hurghada",
+    "countryCode": "EG",
+    "timezone": "Africa/Cairo"
+  },
+  {
+    "iataCode": "SSH",
+    "name": "Sharm El Sheikh International Airport",
+    "city": "Sharm El Sheikh",
+    "countryCode": "EG",
+    "timezone": "Africa/Cairo"
+  },
+  {
+    "iataCode": "CDG",
+    "name": "Paris Charles de Gaulle Airport",
+    "city": "Paris",
+    "countryCode": "FR",
+    "timezone": "Europe/Paris"
+  },
+  {
+    "iataCode": "ORY",
+    "name": "Paris Orly Airport",
+    "city": "Paris",
+    "countryCode": "FR",
+    "timezone": "Europe/Paris"
+  },
+  {
+    "iataCode": "NCE",
+    "name": "Nice Côte d'Azur Airport",
+    "city": "Nice",
+    "countryCode": "FR",
+    "timezone": "Europe/Paris"
+  },
+  {
+    "iataCode": "LHR",
+    "name": "London Heathrow Airport",
+    "city": "London",
+    "countryCode": "GB",
+    "timezone": "Europe/London"
+  },
+  {
+    "iataCode": "LGW",
+    "name": "London Gatwick Airport",
+    "city": "London",
+    "countryCode": "GB",
+    "timezone": "Europe/London"
+  },
+  {
+    "iataCode": "DXB",
+    "name": "Dubai International Airport",
+    "city": "Dubai",
+    "countryCode": "AE",
+    "timezone": "Asia/Dubai"
+  },
+  {
+    "iataCode": "FCO",
+    "name": "Rome Fiumicino Airport",
+    "city": "Rome",
+    "countryCode": "IT",
+    "timezone": "Europe/Rome"
+  },
+  {
+    "iataCode": "MXP",
+    "name": "Milan Malpensa Airport",
+    "city": "Milan",
+    "countryCode": "IT",
+    "timezone": "Europe/Rome"
+  },
+  {
+    "iataCode": "IST",
+    "name": "Istanbul Airport",
+    "city": "Istanbul",
+    "countryCode": "TR",
+    "timezone": "Europe/Istanbul"
+  },
+  {
+    "iataCode": "SAW",
+    "name": "Sabiha Gökçen International Airport",
+    "city": "Istanbul",
+    "countryCode": "TR",
+    "timezone": "Europe/Istanbul"
+  },
+  {
+    "iataCode": "HND",
+    "name": "Tokyo Haneda Airport",
+    "city": "Tokyo",
+    "countryCode": "JP",
+    "timezone": "Asia/Tokyo"
+  },
+  {
+    "iataCode": "NRT",
+    "name": "Narita International Airport",
+    "city": "Tokyo",
+    "countryCode": "JP",
+    "timezone": "Asia/Tokyo"
+  },
+  {
+    "iataCode": "BER",
+    "name": "Berlin Brandenburg Airport",
+    "city": "Berlin",
+    "countryCode": "DE",
+    "timezone": "Europe/Berlin"
+  },
+  {
+    "iataCode": "MUC",
+    "name": "Munich Airport",
+    "city": "Munich",
+    "countryCode": "DE",
+    "timezone": "Europe/Berlin"
+  },
+  {
+    "iataCode": "RUH",
+    "name": "King Khalid International Airport",
+    "city": "Riyadh",
+    "countryCode": "SA",
+    "timezone": "Asia/Riyadh"
+  },
+  {
+    "iataCode": "JED",
+    "name": "King Abdulaziz International Airport",
+    "city": "Jeddah",
+    "countryCode": "SA",
+    "timezone": "Asia/Riyadh"
+  },
+  {
+    "iataCode": "JFK",
+    "name": "John F. Kennedy International Airport",
+    "city": "New York",
+    "countryCode": "US",
+    "timezone": "America/New_York"
+  }
+]

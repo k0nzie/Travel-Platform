@@ -1,0 +1,42 @@
+[
+  {
+    "code": "EG",
+    "name": "Egypt"
+  },
+  {
+    "code": "FR",
+    "name": "France"
+  },
+  {
+    "code": "GB",
+    "name": "United Kingdom"
+  },
+  {
+    "code": "AE",
+    "name": "United Arab Emirates"
+  },
+  {
+    "code": "IT",
+    "name": "Italy"
+  },
+  {
+    "code": "TR",
+    "name": "Turkey"
+  },
+  {
+    "code": "JP",
+    "name": "Japan"
+  },
+  {
+    "code": "DE",
+    "name": "Germany"
+  },
+  {
+    "code": "SA",
+    "name": "Saudi Arabia"
+  },
+  {
+    "code": "US",
+    "name": "United States"
+  }
+]

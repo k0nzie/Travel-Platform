@@ -1,0 +1,98 @@
+[
+  {
+    "name": "Pyramids of Giza",
+    "city": "Cairo",
+    "countryCode": "EG",
+    "category": "Historical"
+  },
+  {
+    "name": "Egyptian Museum",
+    "city": "Cairo",
+    "countryCode": "EG",
+    "category": "Museum"
+  },
+  {
+    "name": "Khan el-Khalili",
+    "city": "Cairo",
+    "countryCode": "EG",
+    "category": "Market"
+  },
+  {
+    "name": "Karnak Temple",
+    "city": "Luxor",
+    "countryCode": "EG",
+    "category": "Historical"
+  },
+  {
+    "name": "Valley of the Kings",
+    "city": "Luxor",
+    "countryCode": "EG",
+    "category": "Historical"
+  },
+  {
+    "name": "Qaitbay Citadel",
+    "city": "Alexandria",
+    "countryCode": "EG",
+    "category": "Historical"
+  },
+  {
+    "name": "Eiffel Tower",
+    "city": "Paris",
+    "countryCode": "FR",
+    "category": "Landmark"
+  },
+  {
+    "name": "Louvre Museum",
+    "city": "Paris",
+    "countryCode": "FR",
+    "category": "Museum"
+  },
+  {
+    "name": "British Museum",
+    "city": "London",
+    "countryCode": "GB",
+    "category": "Museum"
+  },
+  {
+    "name": "Tower of London",
+    "city": "London",
+    "countryCode": "GB",
+    "category": "Historical"
+  },
+  {
+    "name": "Burj Khalifa",
+    "city": "Dubai",
+    "countryCode": "AE",
+    "category": "Landmark"
+  },
+  {
+    "name": "Colosseum",
+    "city": "Rome",
+    "countryCode": "IT",
+    "category": "Historical"
+  },
+  {
+    "name": "Hagia Sophia",
+    "city": "Istanbul",
+    "countryCode": "TR",
+    "category": "Historical"
+  },
+  {
+    "name": "Senso-ji Temple",
+    "city": "Tokyo",
+    "countryCode": "JP",
+    "category": "Religious"
+  },
+  {
+    "name": "Brandenburg Gate",
+    "city": "Berlin",
+    "countryCode": "DE",
+    "category": "Landmark"
+  },
+  {
+    "name": "Central Park",
+    "city": "New York",
+    "countryCode": "US",
+    "category": "Park"
+  }
+]

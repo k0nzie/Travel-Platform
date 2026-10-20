@@ -1,0 +1,19 @@
+node_modules/
+dist/
+.next/
+coverage/
+*.tsbuildinfo
+
+# secrets
+.env
+.env.local
+.env.*.local
+
+# uploaded files (keep the folder)
+backend/uploads/*
+!backend/uploads/.gitkeep
+
+.DS_Store
+.idea/
+.vscode/
+npm-debug.log*

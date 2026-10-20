@@ -1,0 +1,92 @@
+[
+  {
+    "name": "Cairo",
+    "countryCode": "EG",
+    "timezone": "Africa/Cairo"
+  },
+  {
+    "name": "Alexandria",
+    "countryCode": "EG",
+    "timezone": "Africa/Cairo"
+  },
+  {
+    "name": "Luxor",
+    "countryCode": "EG",
+    "timezone": "Africa/Cairo"
+  },
+  {
+    "name": "Hurghada",
+    "countryCode": "EG",
+    "timezone": "Africa/Cairo"
+  },
+  {
+    "name": "Sharm El Sheikh",
+    "countryCode": "EG",
+    "timezone": "Africa/Cairo"
+  },
+  {
+    "name": "Paris",
+    "countryCode": "FR",
+    "timezone": "Europe/Paris"
+  },
+  {
+    "name": "Nice",
+    "countryCode": "FR",
+    "timezone": "Europe/Paris"
+  },
+  {
+    "name": "London",
+    "countryCode": "GB",
+    "timezone": "Europe/London"
+  },
+  {
+    "name": "Dubai",
+    "countryCode": "AE",
+    "timezone": "Asia/Dubai"
+  },
+  {
+    "name": "Rome",
+    "countryCode": "IT",
+    "timezone": "Europe/Rome"
+  },
+  {
+    "name": "Milan",
+    "countryCode": "IT",
+    "timezone": "Europe/Rome"
+  },
+  {
+    "name": "Istanbul",
+    "countryCode": "TR",
+    "timezone": "Europe/Istanbul"
+  },
+  {
+    "name": "Tokyo",
+    "countryCode": "JP",
+    "timezone": "Asia/Tokyo"
+  },
+  {
+    "name": "Berlin",
+    "countryCode": "DE",
+    "timezone": "Europe/Berlin"
+  },
+  {
+    "name": "Munich",
+    "countryCode": "DE",
+    "timezone": "Europe/Berlin"
+  },
+  {
+    "name": "Riyadh",
+    "countryCode": "SA",
+    "timezone": "Asia/Riyadh"
+  },
+  {
+    "name": "Jeddah",
+    "countryCode": "SA",
+    "timezone": "Asia/Riyadh"
+  },
+  {
+    "name": "New York",
+    "countryCode": "US",
+    "timezone": "America/New_York"
+  }
+]
