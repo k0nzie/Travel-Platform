@@ -37,6 +37,12 @@ export const BOOKING_TRANSITIONS: Record<BookingStatus, BookingStatus[]> = {
 export const canTransition = (from: BookingStatus, to: BookingStatus) =>
   BOOKING_TRANSITIONS[from]?.includes(to) ?? false;
 
+/** What a payment is for (PAY-01). Flights and hotels share one PaymentsService. */
+export enum BookingType {
+  Flight = 'flight',
+  Hotel = 'hotel',
+}
+
 /** Where each role lands after login (ACC-04). The frontend maps these to routes. */
 export const ROLE_HOME: Record<Role, string> = {
   [Role.User]: '/',
