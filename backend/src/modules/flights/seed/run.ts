@@ -8,6 +8,7 @@ import { ReferenceDataModule } from '../../reference-data/reference-data.module'
 import { ReferenceDataService } from '../../reference-data/reference-data.service';
 import { Airline, AirlineSchema } from '../schemas/airline.schema';
 import { Flight, FlightSchema } from '../schemas/flight.schema';
+import { runFlightSeed } from './flights.migrate';
 import { seedFlightSamples } from './flights.seed';
 
 /** Separate Person 2 command: no HTTP server, auth dependencies or scheduled jobs. */
@@ -17,7 +18,8 @@ import { seedFlightSamples } from './flights.seed';
     MongooseModule.forRootAsync({ inject: [ConfigService], useFactory: (config: ConfigService) => {
       const uri = config.get<string>('mongo.uri');
       if (!uri) throw new Error('MONGODB_URI is required for seed:flights');
-      return { uri };
+      // No automatic DDL: runFlightSeed creates collections/indexes only after a clean, non-dry migration.
+      return { uri, autoIndex: false, autoCreate: false };
     } }),
     ReferenceDataModule,
     MongooseModule.forFeature([{ name: Airline.name, schema: AirlineSchema }, { name: Flight.name, schema: FlightSchema }]),
@@ -30,9 +32,10 @@ async function main() {
   try {
     const airlines = app.get(getModelToken(Airline.name));
     const flights = app.get(getModelToken(Flight.name));
-    await Promise.all([airlines.init(), flights.init()]);
-    const result = await seedFlightSamples(airlines, flights, app.get(ReferenceDataService), app.get(ConfigService).get('platformCurrency'), process.env.SEED_FLIGHT_DATE);
-    console.log(result);
+    // --dry-run (or SEED_DRY_RUN=1) reports the migration only and writes nothing.
+    const dryRun = process.argv.includes('--dry-run') || process.env.SEED_DRY_RUN === '1';
+    const refs = app.get(ReferenceDataService), currency = app.get(ConfigService).get('platformCurrency');
+    await runFlightSeed(airlines, flights, () => seedFlightSamples(airlines, flights, refs, currency, process.env.SEED_FLIGHT_DATE), dryRun);
   } finally { await app.close(); }
 }
 if (require.main === module) main().catch((error) => { console.error(error); process.exitCode = 1; });

@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Res, UploadedFile } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, Res, UploadedFile } from '@nestjs/common';
 import { ApiBadRequestResponse, ApiConflictResponse, ApiCookieAuth, ApiCreatedResponse, ApiForbiddenResponse, ApiNotFoundResponse, ApiOkResponse, ApiOperation, ApiProduces, ApiTags, ApiUnauthorizedResponse } from '@nestjs/swagger';
 import { Response } from 'express';
 import { Role } from '../../common/constants/enums';
@@ -7,9 +7,9 @@ import { PaginationQueryDto } from '../../common/dto/pagination.dto';
 import { AuthUser } from '../../common/interfaces/auth-user.interface';
 import { ParseObjectIdPipe } from '../../common/pipes/parse-object-id.pipe';
 import { SingleImageUpload } from '../media/media.decorators';
-import { CreateAirlineDto, CreateFlightDto, FlightBookingQueryDto, FlightSearchDto, UpdateAirlineDto, UpdateFlightDto } from './dto/flights.dto';
+import { BaggagePolicyDto, CabinDto, CancellationPolicyDto, CreateAirlineDto, CreateFlightDto, FlightBookingQueryDto, FlightSearchDto, UpdateAirlineDto, UpdateCabinDto, UpdateFlightDto } from './dto/flights.dto';
 import { FlightsService } from './flights.service';
-import { airlineResponse, bookingResponse, detailsResponse, flightResponse, mediaResponse, offerResponse, pageResponse } from './flights.swagger';
+import { airlineResponse, bookingResponse, cancelResponse, detailsResponse, flightResponse, mediaResponse, offerResponse, pageResponse } from './flights.swagger';
 
 /** HTTP adaptation only. Every protected operation also authorizes in FlightsService. */
 @ApiTags('Airlines')
@@ -43,6 +43,16 @@ export class AirlinesController {
   @ApiOkResponse({ schema: airlineResponse })
   update(@CurrentUser() user: AuthUser, @Param('id', ParseObjectIdPipe) id: string, @Body() dto: UpdateAirlineDto) { return this.flights.updateAirline(user, id, dto); }
 
+  @Roles(Role.AirlineModerator) @Put(':id/baggage-policy')
+  @ApiOperation({ summary: 'FLT-04/08: set airline baggage policy', description: 'Extra bag price > 0, max extra bags >= 0, per cabin free bags (whole >= 0) and max kg per bag > 0. Applies to all flights of the airline.' })
+  @ApiOkResponse({ schema: airlineResponse })
+  baggagePolicy(@CurrentUser() user: AuthUser, @Param('id', ParseObjectIdPipe) id: string, @Body() dto: BaggagePolicyDto) { return this.flights.setBaggagePolicy(user, id, dto); }
+
+  @Roles(Role.AirlineModerator) @Put(':id/cancellation-policy')
+  @ApiOperation({ summary: 'FLT-09: set airline cancellation tiers', description: 'Unique whole-day thresholds >= 0 with refund 0..100. Refund uses the highest threshold <= days remaining, else 0%.' })
+  @ApiOkResponse({ schema: airlineResponse })
+  cancellationPolicy(@CurrentUser() user: AuthUser, @Param('id', ParseObjectIdPipe) id: string, @Body() dto: CancellationPolicyDto) { return this.flights.setCancellationPolicy(user, id, dto); }
+
   @Roles(Role.AirlineModerator) @Post(':id/logo') @SingleImageUpload()
   @ApiOperation({ summary: 'FLT-01: upload assigned airline logo', description: 'Multipart image, JPG/PNG up to 5 MB. One logo maximum; DELETE the old logo before uploading a replacement.' })
   @ApiCreatedResponse({ schema: { type: 'array', items: mediaResponse } })
@@ -66,7 +76,7 @@ export class FlightsController {
   constructor(private readonly flights: FlightsService) {}
 
   @Public() @Get('search')
-  @ApiOperation({ summary: 'FLT-11/15: search one-way or round-trip flights', description: 'Direct flights on origin-local days. Return date yields chronological pairs. Adults/children consume seats; lap infants do not (at most one/adult). Price is cheapest eligible fare per seated passenger for the itinerary; totalPrice multiplies by seated passengers, excluding optional baggage. Duration is total flying minutes. Ascending sort, departure then IDs break ties. Pages default to 10.' })
+  @ApiOperation({ summary: 'FLT-11/15: search one-way or round-trip flights', description: 'Direct flights on origin-local days. Return date yields chronological pairs. Adults/children consume seats; lap infants do not (at most one/adult, pay 10% fare). Price is cheapest eligible fare per seated passenger for the itinerary; totalPrice includes seated passengers and infants, excluding optional baggage. Duration is total flying minutes. Ascending sort, departure then IDs break ties. Pages default to 10.' })
   @ApiOkResponse({ schema: pageResponse(offerResponse) })
   search(@Query() q: FlightSearchDto) { return this.flights.search(q); }
 
@@ -81,13 +91,23 @@ export class FlightsController {
   create(@CurrentUser() user: AuthUser, @Body() dto: CreateFlightDto) { return this.flights.createFlight(user, dto); }
 
   @Roles(Role.AirlineModerator) @Patch(':id')
-  @ApiOperation({ summary: 'FLT-05: edit a scheduled future flight', description: 'Preserves booked/held counters. Cannot remove occupied cabins or reduce capacity below occupied seats. Concurrent changes return 409. Schedule changes notify affected customers.' })
+  @ApiOperation({ summary: 'FLT-05: edit a scheduled future flight', description: 'Only times, cabin price/capacity (matched by cabin class) and, while the flight has no bookings, airports. flightNumber, airlineId and currency are immutable. Capacity cannot drop below booked + held. Time changes notify Confirmed passengers.' })
   @ApiOkResponse({ schema: flightResponse })
   update(@CurrentUser() user: AuthUser, @Param('id', ParseObjectIdPipe) id: string, @Body() dto: UpdateFlightDto) { return this.flights.updateFlight(user, id, dto); }
 
-  @Roles(Role.AirlineModerator) @Post(':id/cancel')
-  @ApiOperation({ summary: 'FLT-06: cancel a scheduled future flight', description: 'Terminal status; notifies affected customers. Refund processing belongs to the booking/payment module. Departed/completed/cancelled flights return 409.' })
+  @Roles(Role.AirlineModerator) @Post(':id/cabins')
+  @ApiOperation({ summary: 'FLT-04: add a cabin class to a scheduled flight', description: 'Economy, Premium Economy, Business or First; each at most once; whole capacity > 0; price > 0.' })
   @ApiCreatedResponse({ schema: flightResponse })
+  addCabin(@CurrentUser() user: AuthUser, @Param('id', ParseObjectIdPipe) id: string, @Body() dto: CabinDto) { return this.flights.addCabin(user, id, dto); }
+
+  @Roles(Role.AirlineModerator) @Patch(':id/cabins/:cabinId')
+  @ApiOperation({ summary: 'FLT-04/05: change a cabin price or capacity', description: 'Capacity cannot drop below seats already booked or held. Existing bookings keep their price.' })
+  @ApiOkResponse({ schema: flightResponse })
+  updateCabin(@CurrentUser() user: AuthUser, @Param('id', ParseObjectIdPipe) id: string, @Param('cabinId', ParseObjectIdPipe) cabinId: string, @Body() dto: UpdateCabinDto) { return this.flights.updateCabin(user, id, cabinId, dto); }
+
+  @Roles(Role.AirlineModerator) @Post(':id/cancel')
+  @ApiOperation({ summary: 'FLT-06: cancel a scheduled future flight', description: 'Terminal. Releases held seats, cancels Confirmed bookings with a 100% refund marker, expires PendingPayment bookings, notifies passengers and calls the booking module handoff. Departed/completed/cancelled flights return 409.' })
+  @ApiCreatedResponse({ schema: cancelResponse })
   cancel(@CurrentUser() user: AuthUser, @Param('id', ParseObjectIdPipe) id: string) { return this.flights.cancelFlight(user, id); }
 
   @Roles(Role.AirlineModerator) @Get(':id/bookings')
@@ -95,8 +115,8 @@ export class FlightsController {
   @ApiOkResponse({ schema: pageResponse(bookingResponse) })
   bookings(@CurrentUser() user: AuthUser, @Param('id', ParseObjectIdPipe) id: string, @Query() q: FlightBookingQueryDto) { return this.flights.listBookings(user, id, q); }
 
-  @Roles(Role.AirlineModerator) @Get(':id/bookings.csv') @ApiProduces('text/csv')
-  @ApiOperation({ summary: 'FLT-29: export matching bookings as CSV', description: 'Same filters and scope as list; all matches regardless of page/limit. UTF-8, CRLF records, RFC4180 escaping. Formula-like strings prefixed with apostrophe for spreadsheets.' })
+  @Roles(Role.AirlineModerator) @Get([':id/bookings.csv', ':id/passengers/export']) @ApiProduces('text/csv')
+  @ApiOperation({ summary: 'FLT-29: export matching bookings as CSV', description: 'Also served at /flights/:id/passengers/export. Same filters and scope as list; all matches regardless of page/limit. UTF-8, CRLF records, RFC4180 escaping. Formula-like strings prefixed with apostrophe for spreadsheets.' })
   @ApiOkResponse({ content: { 'text/csv': { schema: { type: 'string' } } } })
   async csv(@CurrentUser() user: AuthUser, @Param('id', ParseObjectIdPipe) id: string, @Query() q: FlightBookingQueryDto, @Res({ passthrough: true }) res: Response) {
     const csv = await this.flights.bookingsCsv(user, id, q);

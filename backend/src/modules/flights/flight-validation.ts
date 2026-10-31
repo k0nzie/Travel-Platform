@@ -14,12 +14,19 @@ export function airportLocalToUtc(local: string, zone: string): Date {
   return localToUtc(local, zone);
 }
 
-export function validateCabins(cabins: CabinDto[]) {
-  if (!Array.isArray(cabins) || !cabins.length || cabins.length > 3 || cabins.some((c) => !c ||
-      !Object.values(CabinType).includes(c.cabin) || !Number.isSafeInteger(c.capacity) || c.capacity < 0 || c.capacity > 1000 ||
-      !Number.isFinite(c.price) || c.price < 0) || new Set(cabins.map((c) => c.cabin)).size !== cabins.length) {
-    throw new BadRequestException('At least one cabin, with unique cabin types, is required');
+/** FLT-04: valid class, whole capacity > 0, price > 0. */
+export function validateCabin(c: Partial<CabinDto>) {
+  if (!c || !Object.values(CabinType).includes(c.cabin as CabinType) || !Number.isSafeInteger(c.capacity) || (c.capacity as number) <= 0 ||
+      (c.capacity as number) > 1000 || !Number.isFinite(c.price) || (c.price as number) <= 0) {
+    throw new BadRequestException('Cabin needs a valid class, whole capacity > 0 and price > 0');
   }
+}
+
+/** FLT-04: fixed set {Economy, Premium Economy, Business, First}, each at most once. */
+export function validateCabins(cabins: CabinDto[]) {
+  if (!Array.isArray(cabins) || !cabins.length || cabins.length > 4) throw new BadRequestException('1 to 4 cabins required');
+  cabins.forEach(validateCabin);
+  if (new Set(cabins.map((c) => c.cabin)).size !== cabins.length) throw new BadRequestException('Each cabin class may be used once per flight');
 }
 
 /** Strict calendar date; shared localDayRangeUtc performs the actual timezone conversion. */

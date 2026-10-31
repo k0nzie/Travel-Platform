@@ -11,7 +11,7 @@
     "start:prod": "node dist/main",
     "seed": "ts-node -r tsconfig-paths/register src/database/seed/seed.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "node --require ts-node/register --test src/modules/flights/flights.test.ts",
+    "test": "node --require ts-node/register --test src/modules/flights/flights.test.ts src/modules/flights/objectid-schema.test.ts",
     "lint": "node scripts/lint.cjs",
     "seed:flights": "ts-node src/modules/flights/seed/run.ts"
   },

@@ -1,3 +1,35 @@
-2026-10-30 — Kanban t_ec7ce427 (Person 2)
+================================================
+Date: 2026-10-30
+Student: Ahmed Hisham
+Tool: Hermes Agent (Claude)
+Related Requirement: FLT-01..FLT-30 (Person 2: airlines, flights, search)
+Prompt: Implement the Person 2 module in backend/src/modules/flights: Airline and Flight schemas with embedded cabins, baggagePolicy and cancellationTiers; admin airline creation; moderator-scoped airline/flight create, edit, cancel; atomic reserveSeats/releaseSeats/convertHeldToBooked for Person 3; pure computeRefundPercent; one-way and round-trip local-date search with sorting and pagination; flight details; moderator booking list and CSV export; seed data. TDD, no live Mongo needed, npm test / lint / tsc must pass.
+How the output was used: Generated the flights module, tests and seed script; reviewed the diff, ran npm test, npm run lint and npx tsc --noEmit, and kept the result.
+================================================
 
-Implement Kanban task t_ec7ce427 in this existing branch. Read docs/WORK_SPLIT.md, docs/CONVENTIONS.md, backend/package.json, and all existing shared foundation code before editing. Scope: backend/src/modules/flights/**, Person 2 seed/sample data, backend/src/app.module.ts FlightsModule slot, and only minimum package/test configuration necessary for required commands. Do not edit README or team docs. Follow strict vertical-slice TDD: add a failing test, run it and confirm expected failure, then minimal implementation, repeating. Build Airline and Flight Mongoose schemas with embedded cabins, baggagePolicy, cancellationTiers; class-validator Swagger DTOs; fully documented controller/service; admin airline creation, moderator-scoped airline update/logo upload using MediaService and assertModerates; scoped flight create/edit/cancel/status lifecycle; atomic reserveSeats/releaseSeats/convertHeldToBooked exported for Person 3; pure exported computeRefundPercent; public one-way/round-trip local-date search with airport IANA timezone helpers, passenger availability, cabin/price filtering, deterministic price/duration/departure sorting, shared pagination; public details with local times/current availability; moderator booking list and CSV against a minimal read-only flight_bookings Mongoose contract, same filters/scope, robust RFC4180 escaping; seed/sample airlines/flights; FlightsModule export. Use ReferenceDataService, MediaService, localToUtc/localDayRangeUtc/utcToLocalIso, paginate/toPage, ParseObjectIdPipe, existing roles/decorators. Do not add runtime dependencies. The foundation currently lacks test/lint scripts and tooling; use existing TypeScript/ts-node and Node built-in test runner if practical, with package scripts that actually execute. Ensure npm test, npm run lint, and npx tsc --noEmit pass. Include comprehensive focused tests covering policy boundaries, lifecycle, atomic update filters/updates, validation helpers, timezone/search behavior, CSV escaping, and authorization service calls without requiring a live Mongo server. Inspect git diff at end and leave changes uncommitted. Also append this material prompt to AI_PROMPTS.txt only if that existing team-required file exists or create it at repo root if required by docs. Report exact commands/results and any acceptance gap honestly.
+================================================
+Date: 2026-10-31
+Student: Ahmed Hisham
+Tool: Hermes Agent (Claude)
+Related Requirement: FLT-03, FLT-04, FLT-05, FLT-06, FLT-08, FLT-09, FLT-11
+Prompt: Rework Person 2: move baggage and cancellation policies to the Airline (PUT /api/airlines/:id/baggage-policy and /cancellation-policy); add Airline.status active|suspended and filter search to Scheduled flights of active airlines; add Premium Economy and strictly positive capacity/price/max-kg rules; restrict PATCH /api/flights/:id; add POST /api/flights/:id/cabins and PATCH /api/flights/:id/cabins/:cabinId; reject duplicate flight number per airline per departure day; FLT-06 cancellation handoff to Person 3.
+How the output was used: Applied the rework, reviewed the diff and verified with the test, lint and typecheck gates.
+================================================
+
+================================================
+Date: 2026-10-31
+Student: Ahmed Hisham
+Tool: Hermes Agent (Claude)
+Related Requirement: FLT-03, FLT-06, FLT-26, FLT-29, GEN-11
+Prompt: Fix Person 2 integration issues: use the shared BookingStatus enum (lowercase values) instead of custom PascalCase booking statuses; replace the @Optional injected cancellation handler with a register-callback FlightHooksService that Person 3 can call; make the duplicate flight check use the origin-local departure date; add releaseBookedSeats for FLT-26; add /flights/:id/passengers/export alias; make the seed backfill airline status and policies; reformat AI_PROMPTS.txt per section 11.1.
+How the output was used: Applied the changes, updated the tests, and verified with npm test, npm run lint and npx tsc --noEmit.
+================================================
+
+================================================
+Date: 2026-10-31
+Student: Ahmed Hisham
+Tool: Hermes Agent (Claude)
+Related Requirement: GEN-05, FLT-03, FLT-05, FLT-11, FLT-29
+Prompt: Fix the cross-module Mongoose ObjectId schema bug: replace every @Prop({ type: Types.ObjectId }) declaration in the affected schemas with MongooseSchema.Types.ObjectId while preserving refs, required/index options and TypeScript types; add regression coverage for flight search and schedule notifications; then add safe migration support for legacy string airlineId values, converting only valid IDs that reference an existing airline, preserving inventory and unrelated fields, aborting unresolved conflicts, and keeping dry-run write-free and idempotent.
+How the output was used: Updated the eight affected schema files, added ObjectId casting and migration regression tests, and verified the migration behavior without modifying Atlas data.
+================================================
