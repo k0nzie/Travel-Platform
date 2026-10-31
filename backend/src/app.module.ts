@@ -13,6 +13,7 @@ import { MediaModule } from './modules/media/media.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { ReferenceDataModule } from './modules/reference-data/reference-data.module';
 import { UsersModule } from './modules/users/users.module';
+import { FlightsModule } from './modules/flights/flights.module';
 
 @Module({
   imports: [
@@ -39,7 +40,7 @@ import { UsersModule } from './modules/users/users.module';
     AuthModule,
 
     // ---- Teammates add their modules below ----
-    // FlightsModule,          // Person 2
+    FlightsModule,             // Person 2
     // FlightBookingsModule,   // Person 3
     // PaymentsModule,         // Person 3
     // HotelsModule,           // Person 4
