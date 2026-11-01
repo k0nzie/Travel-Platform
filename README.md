@@ -15,8 +15,11 @@ cd backend
 npm install
 cp .env.example .env        # fill MONGODB_URI, JWT_ACCESS_SECRET, ADMIN_EMAIL, ADMIN_PASSWORD
 npm run seed                # reference data (countries, cities, airports, currencies, attractions) + admin
+npm run seed:flights       # Person 2: migrate legacy flights/airlines, then insert sample data (run `npm run seed` first)
 npm run start:dev
 ```
+
+`seed:flights` is idempotent. It first normalizes legacy `status`/cabin casing, adds missing cabin `_id`s, backfills `departureDay` and airline `status`/baggage/cancellation policy, keeping `held`/`booked` counts. It then inserts sample rows only if absent. Preview with `npm run seed:flights -- --dry-run` (or `SEED_DRY_RUN=1`): prints the migration report, writes nothing. Rerun if the report lists `conflicts`.
 
 - API: http://localhost:4000/api
 - Swagger UI: http://localhost:4000/api/docs
