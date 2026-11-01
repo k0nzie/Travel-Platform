@@ -9,8 +9,10 @@ import { validateEnv } from './config/env.validation';
 import { HealthController } from './health.controller';
 import { AuditModule } from './modules/audit/audit.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { FlightBookingsModule } from './modules/flight-bookings/flight-bookings.module';
 import { MediaModule } from './modules/media/media.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
+import { PaymentsModule } from './modules/payments/payments.module';
 import { ReferenceDataModule } from './modules/reference-data/reference-data.module';
 import { UsersModule } from './modules/users/users.module';
 import { FlightsModule } from './modules/flights/flights.module';
@@ -41,8 +43,8 @@ import { FlightsModule } from './modules/flights/flights.module';
 
     // ---- Teammates add their modules below ----
     FlightsModule,             // Person 2
-    // FlightBookingsModule,   // Person 3
-    // PaymentsModule,         // Person 3
+    FlightBookingsModule,      // Person 3
+    PaymentsModule,            // Person 3
     // HotelsModule,           // Person 4
     // HotelBookingsModule,    // Person 4
     // ItinerariesModule,      // Person 5

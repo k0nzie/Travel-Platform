@@ -6,6 +6,7 @@ export enum NotificationType {
   BookingConfirmed = 'booking_confirmed',
   BookingCancelled = 'booking_cancelled',
   BookingExpired = 'booking_expired',
+  PaymentFailed = 'payment_failed',
   RefundIssued = 'refund_issued',
   RefundUpdated = 'refund_updated',
   FlightScheduleChanged = 'flight_schedule_changed',

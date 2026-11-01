@@ -4,6 +4,7 @@ Software Project I — Winter 2026. NestJS + MongoDB Atlas backend, Next.js fron
 
 - Work split: [`docs/WORK_SPLIT.md`](docs/WORK_SPLIT.md)
 - Backend conventions for teammates: [`docs/CONVENTIONS.md`](docs/CONVENTIONS.md)
+- Flight booking + payments integration: [`docs/P3_BOOKING_PAYMENTS.md`](docs/P3_BOOKING_PAYMENTS.md)
 
 ## Backend setup
 
@@ -41,6 +42,17 @@ npm run start:dev
 | Reference data | `GET /airports`, `GET /airports/:id`, `GET /reference/countries`, `/cities`, `/currencies`, `/attractions` | FLT-02, GEN-12 |
 | Uploads | `MediaService` + upload decorators, files served from `/uploads` | GEN-08 |
 | Cross-cutting | global auth + roles guards, validation, error format, pagination | GEN-05, GEN-13, ACC-18 |
+
+## Implemented so far (Person 3 — flight booking and payments)
+
+Runs against stub flights until Person 2's module is merged; see the integration guide.
+Test with `npm run test:bookings`.
+
+| Area | Endpoints | Requirements |
+|---|---|---|
+| Booking | `POST /flight-bookings/quote`, `POST /flight-bookings`, `GET /flight-bookings`, `GET /flight-bookings/:id` | FLT-12, 19, 21, 22, 23, 26 |
+| Tickets and cancelling | `GET /flight-bookings/:id/e-ticket`, `GET /flight-bookings/:id/cancellation-preview`, `POST /flight-bookings/:id/cancel` | FLT-25, 26, PAY-03 |
+| Payments | `GET /payments/checkout/:type/:bookingId`, `POST /payments/intent`, `POST /payments/webhook`, `GET /payments/:id`, `POST /payments/:id/sync`, `POST /payments/:id/test-confirm` | PAY-01 to 04, GEN-11 |
 
 ### Auth design (for the discussion)
 

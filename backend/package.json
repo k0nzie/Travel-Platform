@@ -10,10 +10,12 @@
     "start:dev": "nest start --watch",
     "start:prod": "node dist/main",
     "seed": "ts-node -r tsconfig-paths/register src/database/seed/seed.ts",
+    "seed:flights": "ts-node src/modules/flights/seed/run.ts",
+    "seed:stub-flights": "ts-node -r tsconfig-paths/register src/modules/flight-bookings/stub/seed-stub-flights.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "node --require ts-node/register --test src/modules/flights/flights.test.ts src/modules/flights/objectid-schema.test.ts",
-    "lint": "node scripts/lint.cjs",
-    "seed:flights": "ts-node src/modules/flights/seed/run.ts"
+    "test:bookings": "node --test --test-force-exit -r ts-node/register test/flight-bookings.e2e.ts",
+    "lint": "node scripts/lint.cjs"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.0",
@@ -32,8 +34,10 @@
     "luxon": "^3.5.0",
     "mongoose": "^8.9.0",
     "multer": "^2.0.0",
+    "pdfkit": "^0.20.2",
     "reflect-metadata": "^0.2.2",
-    "rxjs": "^7.8.1"
+    "rxjs": "^7.8.1",
+    "stripe": "^23.1.0"
   },
   "devDependencies": {
     "@nestjs/cli": "^11.0.0",
@@ -43,6 +47,8 @@
     "@types/luxon": "^3.4.2",
     "@types/multer": "^1.4.12",
     "@types/node": "^22.10.0",
+    "@types/pdfkit": "^0.17.7",
+    "mongodb-memory-server": "^11.3.0",
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
     "typescript": "~5.6.3"
