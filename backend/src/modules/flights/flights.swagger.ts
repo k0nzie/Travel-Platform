@@ -19,7 +19,7 @@ export const airlineResponse = object({
 export const flightResponse = object({
   _id: text, airlineId: text, flightNumber: text, origin: text, destination: text,
   originTimezone: text, destinationTimezone: text, departureAt: date, arrivalAt: date, currency: text,
-  status: { type: 'string', enum: ['Scheduled', 'Departed', 'Completed', 'Cancelled'] },
+  status: { type: 'string', enum: ['Scheduled', 'Departed', 'Cancelled'] },
   cabins: { type: 'array', items: object({ _id: text, cabin: cabinEnum, capacity: integer, price: number, held: integer, booked: integer }) },
 });
 export const detailsResponse: SchemaObject = object({
@@ -31,8 +31,8 @@ export const detailsResponse: SchemaObject = object({
 });
 export const cancelResponse = object({ flight: flightResponse, cancelledBookings: integer, expiredBookings: integer });
 export const bookingResponse = object({
-  _id: text, flightId: text, userId: text, reference: text, passengerNames: { type: 'array', items: text }, cabin: text, seats: integer,
-  status: { type: 'string', enum: ['pending_payment', 'confirmed', 'completed', 'expired', 'cancelled'] }, refundPercent: number, createdAt: date,
+  id: text, reference: text, passengerNames: { type: 'array', items: text }, cabin: cabinEnum, seats: integer,
+  status: { type: 'string', enum: ['confirmed', 'completed', 'cancelled'] }, createdAt: date,
 });
 export const offerResponse = object({ outbound: detailsResponse, inbound: detailsResponse, price: number, totalPrice: number, durationMinutes: number });
 export const pageResponse = (items: SchemaObject): SchemaObject => object({ items: { type: 'array', items }, page: integer, limit: integer, total: integer, totalPages: integer });

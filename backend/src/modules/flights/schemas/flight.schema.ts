@@ -2,7 +2,8 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument, Types, Schema as MongooseSchema } from 'mongoose';
 
 export enum CabinType { Economy = 'Economy', PremiumEconomy = 'Premium Economy', Business = 'Business', First = 'First' }
-export enum FlightStatus { Scheduled = 'Scheduled', Departed = 'Departed', Completed = 'Completed', Cancelled = 'Cancelled' }
+/** FLT-30: only these three states. A flight becomes Departed once its departure time passes. */
+export enum FlightStatus { Scheduled = 'Scheduled', Departed = 'Departed', Cancelled = 'Cancelled' }
 const positive = { validator: (v: number) => v > 0, message: 'Must be > 0' };
 const integer = { validator: Number.isSafeInteger, message: 'Must be a safe integer' };
 
@@ -28,7 +29,7 @@ export class Flight {
   @Prop({ required: true }) originTimezone: string;
   @Prop({ required: true }) destinationTimezone: string;
   @Prop({ required: true }) departureAt: Date;
-  /** FLT-03: UTC calendar day of departure, backing the same-day duplicate rule. */
+  /** FLT-03: calendar day of departure in the origin airport's local time, backing the same-day duplicate rule. */
   @Prop({ required: true, match: /^\d{4}-\d{2}-\d{2}$/ }) departureDay: string;
   @Prop({ required: true, validate: { validator: function (value: Date) {
     const departure = this.get('departureAt');

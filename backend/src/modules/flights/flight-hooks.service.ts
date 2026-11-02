@@ -1,38 +1,66 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import { BookingStatus } from '../../common/constants/enums';
+import { PaginatedResult } from '../../common/dto/pagination.dto';
+import { FlightBookingQueryDto } from './dto/flights.dto';
+import { CabinType } from './schemas/flight.schema';
 
-export interface FlightCancelledEvent { flightId: string; cancelledBookingIds: string[]; expiredBookingIds: string[]; refundPercent: 100 }
-export type FlightCancellationHandler = (event: FlightCancelledEvent) => Promise<void>;
+/** FLT-29 row contract: reference, passenger names, cabin, seats, status. */
+export interface FlightBookingRow {
+  id: string;
+  reference: string;
+  passengerNames: string[];
+  cabin: CabinType;
+  seats: number;
+  status: BookingStatus;
+  createdAt?: Date;
+}
+
+export interface FlightCancellationResult {
+  cancelled: number;
+  expired: number;
+  /** Booking references whose refund handoff failed; repeating the flight cancel retries them. */
+  failed: string[];
+}
 
 /**
- * FLT-06 handoff without circular imports. Person 3 imports FlightsModule, injects this and registers in onModuleInit:
- *
- *   onModuleInit() { this.flightHooks.registerCancellationHandler('bookings', (e) => this.refundAll(e)); }
- *
- * Flights has already marked confirmed bookings cancelled (refundPercent 100), pending_payment expired, zeroed holds
- * and notified passengers. Handlers issue the PAY-03 refunds and MUST be idempotent per booking id: a failing handler makes
- * runCancellation throw, the booking rows stay flagged handoffPending, and re-calling POST /flights/:id/cancel re-delivers
- * only those rows until every handler succeeds.
+ * Everything the flights module needs from flight bookings. The bookings module
+ * (Person 3) owns the flight_bookings collection and implements this; flights
+ * never reads or writes booking documents directly.
+ */
+export interface FlightBookingsBridge {
+  /** FLT-05: airports are locked once a flight has any booking. */
+  countForFlight(flightId: string): Promise<number>;
+  /** FLT-29: moderator list for one flight. */
+  listForFlight(flightId: string, query: FlightBookingQueryDto): Promise<PaginatedResult<FlightBookingRow>>;
+  /** FLT-29: CSV export, all matches up to `max`. */
+  exportForFlight(flightId: string, query: FlightBookingQueryDto, max: number): Promise<FlightBookingRow[]>;
+  /** FLT-06: expire holds, cancel confirmed bookings with 100% refunds, notify. Must be idempotent. */
+  onFlightCancelled(flightId: string): Promise<FlightCancellationResult>;
+  /** FLT-05: refresh booking copies of the times and notify Confirmed passengers. */
+  onScheduleChanged(flightId: string): Promise<{ updated: number }>;
+}
+
+/**
+ * Registry that lets FlightBookingsModule plug into flights without an import cycle
+ * (bookings already imports FlightsModule). Registered in FlightBookingsService.onModuleInit.
  */
 @Injectable()
 export class FlightHooksService {
   private readonly logger = new Logger(FlightHooksService.name);
-  private readonly handlers = new Map<string, FlightCancellationHandler>();
+  private registered?: FlightBookingsBridge;
 
-  registerCancellationHandler(name: string, handler: FlightCancellationHandler) {
-    this.handlers.set(name, handler);
-    this.logger.log(`Registered flight cancellation handler: ${name}`);
+  register(bridge: FlightBookingsBridge) {
+    this.registered = bridge;
+    this.logger.log('Flight bookings bridge registered');
   }
 
-  async runCancellation(event: FlightCancelledEvent) {
-    // No consumer registered (Person 3 absent/failed to register): fail so rows stay handoffPending for retry.
-    if (!this.handlers.size) throw new Error('No refund handler registered; handoff stays pending');
-    const failures: string[] = [];
-    for (const [name, handler] of this.handlers) {
-      try { await handler(event); } catch (error) {
-        failures.push(name);
-        this.logger.error(`Cancellation handler ${name} failed for flight ${event.flightId}: ${(error as Error).message}`);
-      }
+  get bookings(): FlightBookingsBridge {
+    if (!this.registered) {
+      throw new ServiceUnavailableException({
+        message: 'Flight bookings are not available on this server',
+        code: 'BOOKINGS_UNAVAILABLE',
+      });
     }
-    if (failures.length) throw new Error(`Cancellation handlers failed: ${failures.join(', ')}`);
+    return this.registered;
   }
 }

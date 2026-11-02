@@ -9,7 +9,6 @@ import {
   IsIn,
   IsInt,
   IsMongoId,
-  IsNotEmpty,
   IsOptional,
   IsString,
   Length,
@@ -20,6 +19,7 @@ import {
 } from 'class-validator';
 import { BookingStatus } from '../../../common/constants/enums';
 import { PaginationQueryDto } from '../../../common/dto/pagination.dto';
+import { CabinType } from '../../flights/schemas/flight.schema';
 import { PassengerType } from '../ports/flight-inventory.port';
 
 export const MAX_PASSENGERS = 9;
@@ -31,10 +31,9 @@ export class BookingLegDto {
   @IsMongoId()
   flightId: string;
 
-  @ApiProperty({ example: 'economy' })
-  @IsString()
-  @IsNotEmpty()
-  cabinClass: string;
+  @ApiProperty({ enum: CabinType, example: CabinType.Economy })
+  @IsEnum(CabinType)
+  cabinClass: CabinType;
 }
 
 export class PassengerDto {
@@ -67,7 +66,7 @@ export class PassengerDto {
   @Matches(/^[A-Za-z0-9]{5,20}$/, { message: 'passportNumber must be 5-20 letters or digits' })
   passportNumber: string;
 
-  @ApiPropertyOptional({ minimum: 0, default: 0, description: 'FLT-21: bags beyond the included allowance' })
+  @ApiPropertyOptional({ minimum: 0, default: 0, description: 'FLT-19: bags beyond the included allowance, up to the airline maximum' })
   @IsOptional()
   @IsInt()
   @Min(0)
@@ -98,10 +97,10 @@ export class FlightBookingQueryDto extends PaginationQueryDto {
   @IsEnum(BookingStatus)
   status?: BookingStatus;
 
-  @ApiPropertyOptional({ enum: ['upcoming', 'past'] })
+  @ApiPropertyOptional({ enum: ['upcoming', 'past', 'cancelled'], description: 'FLT-25 groups' })
   @IsOptional()
-  @IsIn(['upcoming', 'past'])
-  scope?: 'upcoming' | 'past';
+  @IsIn(['upcoming', 'past', 'cancelled'])
+  scope?: 'upcoming' | 'past' | 'cancelled';
 }
 
 export class CancelFlightBookingDto {

@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
-import { PaymentsController } from './payments.controller';
+import { BookingPoliciesController, PaymentsController, RefundsController } from './payments.controller';
 import { PaymentsService } from './payments.service';
 import { Payment, PaymentSchema } from './schemas/payment.schema';
 import { StripeEvent, StripeEventSchema } from './schemas/stripe-event.schema';
@@ -14,7 +14,7 @@ import { StripeService } from './stripe.service';
       { name: StripeEvent.name, schema: StripeEventSchema },
     ]),
   ],
-  controllers: [PaymentsController],
+  controllers: [PaymentsController, BookingPoliciesController, RefundsController],
   providers: [PaymentsService, StripeService],
   exports: [PaymentsService],
 })

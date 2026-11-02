@@ -12,7 +12,8 @@ const paths: [string, string, string[]][] = [
   ['../users/schemas/session.schema', 'SessionSchema', ['userId']],
   ['../users/schemas/user.schema', 'UserSchema', ['moderatorAssignment.providerId']],
   ['./schemas/flight.schema', 'FlightSchema', ['airlineId']],
-  ['./schemas/flight-booking-view.schema', 'FlightBookingViewSchema', ['flightId', 'userId']],
+  ['../flight-bookings/schemas/flight-booking.schema', 'FlightBookingSchema', ['userId', 'paymentId', 'legs.flightId', 'legs.airlineId']],
+  ['../payments/schemas/payment.schema', 'PaymentSchema', ['bookingId', 'userId']],
   ['../reference-data/schemas/reference.schemas', 'CitySchema', ['countryId']],
   ['../reference-data/schemas/reference.schemas', 'AirportSchema', ['cityId']],
 ];

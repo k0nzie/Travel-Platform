@@ -17,7 +17,7 @@ import { assertOwner } from '../../common/utils/access.util';
 import { NotificationType } from '../notifications/schemas/notification.schema';
 import { NotificationsService } from '../notifications/notifications.service';
 import { BookingConfirmationHandler } from './booking-confirmation-handler.interface';
-import { CreatePaymentIntentDto, TestConfirmDto } from './dto/payments.dto';
+import { CreatePaymentDto, TestConfirmDto } from './dto/payments.dto';
 import {
   OPEN_PAYMENT_STATUSES,
   Payment,
@@ -38,6 +38,24 @@ const RESUMABLE_INTENT_STATUSES: Stripe.PaymentIntent.Status[] = [
 ];
 
 const MAX_REFUND_BATCH = 50;
+
+/** PAY-03 statuses shown to users. `queued` is internal: recorded, Stripe not reached yet. */
+const REFUND_STATUS_LABEL: Record<RefundStatus, 'Pending' | 'Refunded' | 'Failed'> = {
+  [RefundStatus.Queued]: 'Pending',
+  [RefundStatus.Pending]: 'Pending',
+  [RefundStatus.Succeeded]: 'Refunded',
+  [RefundStatus.Failed]: 'Failed',
+};
+
+const refundView = (refund: Refund & { createdAt?: Date; updatedAt?: Date }) => ({
+  id: String(refund._id),
+  amountMinor: refund.amountMinor,
+  status: REFUND_STATUS_LABEL[refund.status],
+  reason: refund.reason,
+  stripeRefundId: refund.stripeRefundId ?? null,
+  createdAt: refund.createdAt,
+  updatedAt: refund.updatedAt,
+});
 
 /**
  * Generic payments for both booking types (PAY-01, PAY-03, PAY-04). Everything
@@ -88,18 +106,19 @@ export class PaymentsService {
     };
   }
 
-  /** PAY-01 / PAY-03: starts a payment, or resumes the existing one after a failed attempt. */
-  async createIntent(user: AuthUser, dto: CreatePaymentIntentDto) {
-    const ctx = await this.handlerFor(dto.bookingType).getPaymentContext(dto.bookingId, user);
+  /**
+   * PAY-02: records that the traveller accepted the provider's policies, with a timestamp
+   * and a copy of exactly what was accepted. Payment is blocked until this exists.
+   */
+  async acceptPolicies(user: AuthUser, type: BookingType, bookingId: string) {
+    const ctx = await this.handlerFor(type).getPaymentContext(bookingId, user);
     const currency = this.config.get<string>('platformCurrency');
     if (ctx.currency !== currency) {
       throw new InternalServerErrorException(`Booking currency ${ctx.currency} is not the platform currency`);
     }
-
-    const bookingId = new Types.ObjectId(dto.bookingId);
     const payment = await this.paymentModel
       .findOneAndUpdate(
-        { bookingType: dto.bookingType, bookingId },
+        { bookingType: type, bookingId: new Types.ObjectId(bookingId) },
         {
           $set: { policiesAcceptedAt: new Date(), policiesSnapshot: ctx.policies },
           $setOnInsert: {
@@ -113,7 +132,41 @@ export class PaymentsService {
         { upsert: true, new: true, setDefaultsOnInsert: true },
       )
       .exec();
+    return {
+      paymentId: String(payment._id),
+      bookingType: type,
+      bookingId,
+      policiesAcceptedAt: payment.policiesAcceptedAt,
+      policies: payment.policiesSnapshot,
+    };
+  }
 
+  /** PAY-01: starts the Stripe payment for a booking whose policies were accepted. */
+  async startPayment(user: AuthUser, dto: CreatePaymentDto) {
+    const ctx = await this.handlerFor(dto.bookingType).getPaymentContext(dto.bookingId, user);
+    const payment = await this.paymentModel
+      .findOne({ bookingType: dto.bookingType, bookingId: new Types.ObjectId(dto.bookingId) })
+      .exec();
+    if (!payment?.policiesAcceptedAt) {
+      throw new BadRequestException({
+        message: 'Accept the booking policies before paying',
+        code: 'POLICIES_NOT_ACCEPTED',
+        errors: [{ field: 'policies', messages: ['Policies must be accepted first (POST /bookings/:type/:id/accept-policies)'] }],
+      });
+    }
+    return this.ensureIntent(payment, ctx.holdExpiresAt);
+  }
+
+  /** PAY-01: retry after a failed attempt, while the hold lasts. Reuses the same intent when Stripe allows. */
+  async retry(user: AuthUser, paymentId: string) {
+    const payment = await this.paymentModel.findById(paymentId).exec();
+    if (!payment) throw new NotFoundException('Payment not found');
+    assertOwner(payment.userId, user, { resource: 'Payment' });
+    const ctx = await this.handlerFor(payment.bookingType).getPaymentContext(String(payment.bookingId), user);
+    return this.ensureIntent(payment, ctx.holdExpiresAt);
+  }
+
+  private async ensureIntent(payment: PaymentDocument, holdExpiresAt: Date) {
     if (!OPEN_PAYMENT_STATUSES.includes(payment.status)) {
       throw new ConflictException({ message: 'This booking is already paid', code: 'ALREADY_PAID' });
     }
@@ -125,23 +178,20 @@ export class PaymentsService {
       intent = await this.stripe.client.paymentIntents.create(
         {
           amount: payment.amountMinor,
-          currency: currency.toLowerCase(),
+          currency: payment.currency.toLowerCase(),
           automatic_payment_methods: { enabled: true, allow_redirects: 'never' },
           description: `Booking ${payment.bookingReference}`,
           metadata: {
             paymentId: String(payment._id),
-            bookingType: dto.bookingType,
-            bookingId: dto.bookingId,
+            bookingType: payment.bookingType,
+            bookingId: String(payment.bookingId),
           },
         },
         // A double click must not create a second chargeable intent.
         { idempotencyKey: `intent-${payment._id}-${payment.stripePaymentIntentId ?? 'first'}` },
       );
       await this.paymentModel
-        .updateOne(
-          { _id: payment._id },
-          { stripePaymentIntentId: intent.id, status: PaymentStatus.Pending },
-        )
+        .updateOne({ _id: payment._id }, { stripePaymentIntentId: intent.id, status: PaymentStatus.Pending })
         .exec();
     }
 
@@ -149,8 +199,8 @@ export class PaymentsService {
       paymentId: String(payment._id),
       clientSecret: intent.client_secret,
       amountMinor: payment.amountMinor,
-      currency,
-      holdExpiresAt: ctx.holdExpiresAt,
+      currency: payment.currency,
+      holdExpiresAt,
     };
   }
 
@@ -158,7 +208,42 @@ export class PaymentsService {
     const payment = await this.paymentModel.findById(id).select('-policiesSnapshot').lean().exec();
     if (!payment) throw new NotFoundException('Payment not found');
     assertOwner(payment.userId, user, { allowAdmin: true, resource: 'Payment' });
-    return payment;
+    return { ...payment, refunds: payment.refunds.map(refundView) };
+  }
+
+  /** PAY-03: one refund with its status (Pending, Refunded, Failed). Owner or admin. */
+  async getRefund(user: AuthUser, refundId: string) {
+    const payment = await this.paymentModel.findOne({ 'refunds._id': new Types.ObjectId(refundId) }).lean().exec();
+    if (!payment) throw new NotFoundException('Refund not found');
+    assertOwner(payment.userId, user, { allowAdmin: true, resource: 'Refund' });
+    const refund = payment.refunds.find((r) => String(r._id) === refundId);
+    return {
+      ...refundView(refund),
+      paymentId: String(payment._id),
+      bookingType: payment.bookingType,
+      bookingId: String(payment.bookingId),
+      bookingReference: payment.bookingReference,
+      currency: payment.currency,
+    };
+  }
+
+  /** PAY-03: payment and refund status for a booking details page. Null before policies are accepted. */
+  async summaryForBooking(type: BookingType, bookingId: Types.ObjectId | string) {
+    const payment = await this.paymentModel
+      .findOne({ bookingType: type, bookingId: new Types.ObjectId(String(bookingId)) })
+      .select('status amountMinor currency paidAt policiesAcceptedAt refunds')
+      .lean()
+      .exec();
+    if (!payment) return null;
+    return {
+      id: String(payment._id),
+      status: payment.status,
+      amountMinor: payment.amountMinor,
+      currency: payment.currency,
+      paidAt: payment.paidAt ?? null,
+      policiesAcceptedAt: payment.policiesAcceptedAt,
+      refunds: payment.refunds.map(refundView),
+    };
   }
 
   /** Same result as the webhook, for when it is delayed or can't reach this machine. */

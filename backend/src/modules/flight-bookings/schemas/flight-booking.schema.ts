@@ -1,5 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { HydratedDocument, Types } from 'mongoose';
+import { HydratedDocument, Schema as MongooseSchema, Types } from 'mongoose';
+import { CabinType } from '../../flights/schemas/flight.schema';
 import { BookingStatus } from '../../../common/constants/enums';
 import { AirportInfo, BaggagePolicy, CancellationTier, PassengerType } from '../ports/flight-inventory.port';
 
@@ -40,13 +41,13 @@ const BookingPassengerSchema = SchemaFactory.createForClass(BookingPassenger);
  */
 @Schema({ _id: false })
 export class BookingLeg {
-  @Prop({ type: Types.ObjectId, required: true, index: true })
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Flight', required: true })
   flightId: Types.ObjectId;
 
   @Prop({ required: true })
   flightNumber: string;
 
-  @Prop({ type: Types.ObjectId, required: true, index: true })
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Airline', required: true })
   airlineId: Types.ObjectId;
 
   @Prop({ required: true })
@@ -64,8 +65,8 @@ export class BookingLeg {
   @Prop({ required: true })
   arrivalAt: Date;
 
-  @Prop({ required: true })
-  cabinClass: string;
+  @Prop({ type: String, enum: Object.values(CabinType), required: true })
+  cabinClass: CabinType;
 
   @Prop({ required: true })
   fareMinor: number;
@@ -100,7 +101,7 @@ export class FlightBooking {
   @Prop({ required: true, unique: true })
   reference: string;
 
-  @Prop({ type: Types.ObjectId, ref: 'User', required: true, index: true })
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'User', required: true, index: true })
   userId: Types.ObjectId;
 
   @Prop({ type: String, enum: Object.values(BookingStatus), default: BookingStatus.PendingPayment, index: true })
@@ -135,7 +136,7 @@ export class FlightBooking {
   @Prop({ required: true })
   holdExpiresAt: Date;
 
-  @Prop({ type: Types.ObjectId, ref: 'Payment' })
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Payment' })
   paymentId?: Types.ObjectId;
 
   @Prop({ type: BookingCancellationSchema })
@@ -162,3 +163,5 @@ export const FlightBookingSchema = SchemaFactory.createForClass(FlightBooking);
 FlightBookingSchema.index({ status: 1, holdExpiresAt: 1 });
 FlightBookingSchema.index({ status: 1, lastArrivalAt: 1 });
 FlightBookingSchema.index({ userId: 1, departureAt: -1 });
+// FLT-05 / FLT-06 / FLT-29: bookings on one flight.
+FlightBookingSchema.index({ 'legs.flightId': 1, status: 1 });

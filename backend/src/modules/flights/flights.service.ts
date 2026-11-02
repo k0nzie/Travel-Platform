@@ -2,37 +2,32 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable,
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { Cron } from '@nestjs/schedule';
-import { Model, Types } from 'mongoose';
-import { BookingStatus, ProviderType, Role } from '../../common/constants/enums';
+import { ClientSession, Model } from 'mongoose';
+import { ProviderType, Role } from '../../common/constants/enums';
 import { AuthUser } from '../../common/interfaces/auth-user.interface';
 import { PaginationQueryDto } from '../../common/dto/pagination.dto';
 import { assertModerates } from '../../common/utils/access.util';
 import { localDayRangeUtc, utcToLocalIso } from '../../common/utils/time.util';
-import { escapeRegex, paginate, toPage } from '../../common/utils/paginate';
+import { paginate, toPage } from '../../common/utils/paginate';
 import { AuditService } from '../audit/audit.service';
 import { AuditAction } from '../audit/schemas/audit-log.schema';
 import { MediaService } from '../media/media.service';
 import { MediaOwnerType } from '../media/schemas/media.schema';
-import { NotificationsService } from '../notifications/notifications.service';
 import { ReferenceDataService } from '../reference-data/reference-data.service';
 import { BaggagePolicyDto, CabinDto, CancellationPolicyDto, CreateAirlineDto, CreateFlightDto, FlightBookingQueryDto, FlightSearchDto, UpdateAirlineDto, UpdateCabinDto, UpdateFlightDto } from './dto/flights.dto';
-import { NotificationType } from '../notifications/schemas/notification.schema';
 import { Airline, AirlineDocument, AirlineStatus } from './schemas/airline.schema';
-import { Cabin, CabinType, Flight, FlightDocument, FlightStatus } from './schemas/flight.schema';
+import { CabinType, Flight, FlightDocument, FlightStatus } from './schemas/flight.schema';
 import { airportLocalToUtc, validateCabin, validateCabins, validateLocalDate } from './flight-validation';
 import { validateBaggagePolicy, validateTiers } from './flight-policy';
 import { compareOffers, eligibleLeg, flightDetails, FlightOffer } from './flight-search';
-import { BOOKING_FIELDS, FlightBookingView } from './schemas/flight-booking-view.schema';
 import { bookingCsv } from './booking-csv';
 import { FlightHooksService } from './flight-hooks.service';
 export { computeRefundPercent } from './flight-policy';
 
-type BookingsRepo = Pick<Model<FlightBookingView>, 'find' | 'countDocuments' | 'distinct' | 'updateMany'>;
-
 /** FLT-03: calendar day of departure at the origin airport, not the UTC day. */
 const localDay = (d: Date, timeZone: string) => utcToLocalIso(d, timeZone).slice(0, 10);
 
-export type AirlineProfile = Airline & { _id: Types.ObjectId; logo: Awaited<ReturnType<MediaService['list']>>[number] | null };
+export type AirlineProfile = Airline & { _id: unknown; logo: Awaited<ReturnType<MediaService['list']>>[number] | null };
 
 /** FLT catalog, scope enforcement and inventory integration boundary for Person 3. */
 @Injectable()
@@ -42,11 +37,9 @@ export class FlightsService {
   constructor(
     @InjectModel(Flight.name) private readonly flights: Model<FlightDocument>,
     @InjectModel(Airline.name) private readonly airlines: Model<AirlineDocument>,
-    @InjectModel(FlightBookingView.name) private readonly bookings: BookingsRepo,
     private readonly reference: ReferenceDataService,
     private readonly media: MediaService,
     private readonly audit: AuditService,
-    private readonly notifications: NotificationsService,
     private readonly config: ConfigService,
     private readonly hooks: FlightHooksService,
   ) {}
@@ -69,34 +62,23 @@ export class FlightsService {
     return this.media.removeAllFor(MediaOwnerType.AirlineLogo, id);
   }
 
-  /** FLT-29: provider scope is verified before querying any booking records. */
+  /** FLT-29: provider scope is verified here; the bookings module owns the data. */
   async listBookings(user: AuthUser, id: string, q: FlightBookingQueryDto) {
-    const filter = await this.bookingFilter(user, id, q);
-    return paginate(this.bookings as Model<FlightBookingView>, filter, { ...q, select: BOOKING_FIELDS, sort: { createdAt: -1, _id: -1 } });
+    await this.assertBookingQuery(user, id, q);
+    return this.hooks.bookings.listForFlight(id, q);
   }
 
-  /** Same scope/filter as the list; exports up to 5,000 matches with the FLT-29 contract projection. */
+  /** Same scope/filter as the list; exports up to 5,000 matches with the FLT-29 columns. */
   async bookingsCsv(user: AuthUser, id: string, q: FlightBookingQueryDto) {
-    const filter = await this.bookingFilter(user, id, q);
-    const rows = await this.bookings.find(filter).select(BOOKING_FIELDS).sort({ createdAt: -1, _id: -1 }).limit(5000).lean().exec();
-    return bookingCsv(rows);
+    await this.assertBookingQuery(user, id, q);
+    return bookingCsv(await this.hooks.bookings.exportForFlight(id, q, 5000));
   }
 
-  private async bookingFilter(user: AuthUser, id: string, q: FlightBookingQueryDto) {
+  private async assertBookingQuery(user: AuthUser, id: string, q: FlightBookingQueryDto) {
     await this.scopedFlight(user, id);
     if (q.from) validateLocalDate(q.from);
     if (q.to) validateLocalDate(q.to);
     if (q.from && q.to && q.from > q.to) throw new BadRequestException('Invalid booking date range');
-    const filter: Record<string, any> = { flightId: new Types.ObjectId(id) };
-    if (q.status) filter.status = q.status;
-    if (q.cabin) filter.cabin = q.cabin;
-    if (q.reference) filter.reference = new RegExp(escapeRegex(q.reference), 'i');
-    if (q.from || q.to) {
-      filter.createdAt = {};
-      if (q.from) filter.createdAt.$gte = localDayRangeUtc(q.from, 'UTC').start;
-      if (q.to) filter.createdAt.$lt = localDayRangeUtc(q.to, 'UTC').end;
-    }
-    return filter;
   }
 
   /** FLT-17: current public inventory and each airport's local time, even between cron ticks. */
@@ -191,7 +173,7 @@ export class FlightsService {
     ]);
     if (String(origin._id) === String(destination._id)) throw new BadRequestException('Airports must differ');
     if (origin.iataCode !== old.origin || destination.iataCode !== old.destination) {
-      if (await this.bookings.countDocuments({ flightId: new Types.ObjectId(id) }).exec() > 0) {
+      if (await this.hooks.bookings.countForFlight(id) > 0) {
         throw new ConflictException('Airports cannot change once the flight has bookings');
       }
     }
@@ -212,7 +194,8 @@ export class FlightsService {
       departureAt, departureDay, arrivalAt, cabins };
     const updated = await this.guardedFlightUpdate({ _id: id, airlineId: old.airlineId, status: FlightStatus.Scheduled, departureAt: { $gt: new Date() }, __v: old.__v, cabins: old.cabins }, { $set: set, $inc: { __v: 1 } });
     if (old.departureAt.getTime() !== departureAt.getTime() || old.arrivalAt.getTime() !== arrivalAt.getTime()) {
-      await this.notifyPassengers(id, NotificationType.FlightScheduleChanged, [BookingStatus.Confirmed]);
+      // FLT-05: bookings refresh their copies of the times and notify Confirmed passengers.
+      await this.hooks.bookings.onScheduleChanged(id);
     }
     return updated;
   }
@@ -264,54 +247,31 @@ export class FlightsService {
   }
 
   /**
-   * FLT-06: cancel a scheduled future flight. Zeroes held seats, cancels Confirmed bookings with a
-   * 100% refund marker (PAY-03), expires PendingPayment bookings, notifies every passenger, then
-   * runs handlers registered via FlightHooksService so Person 3 can execute the refunds.
-   * Idempotent: repeating the call on an already-cancelled flight only re-delivers unfinished handoffs.
+   * FLT-06: cancel a scheduled future flight after confirmation. The flight becomes Cancelled (hidden from
+   * search, not bookable); then the bookings module expires pending holds, cancels Confirmed bookings with a
+   * 100% refund (PAY-03), releases their seats and notifies passengers.
+   * Idempotent: repeating the call on an already-cancelled flight retries any booking whose refund failed.
    */
   async cancelFlight(user: AuthUser, id: string) {
     const old = await this.scopedFlight(user, id);
-    if (old.status === FlightStatus.Cancelled) return { flight: old, ...await this.cancelFlightBookings(id) };
-    this.assertEditable(old);
-    const flight = await this.guardedFlightUpdate(
-      { _id: id, airlineId: old.airlineId, status: FlightStatus.Scheduled, departureAt: { $gt: new Date() }, __v: old.__v },
-      { $set: { status: FlightStatus.Cancelled, 'cabins.$[].held': 0 }, $inc: { __v: 1 } },
-    );
-    return { flight, ...await this.cancelFlightBookings(id) };
-  }
-
-  /**
-   * FLT-06 handoff. Conditional updates flag exactly the rows they transition with handoffPending, so the event
-   * only carries bookings this workflow committed (a booking completed concurrently is never refunded). Rows stay
-   * flagged until all handlers succeed; a failure throws 503 and a retry re-delivers them without re-transitioning.
-   */
-  async cancelFlightBookings(flightId: string) {
-    const target = { flightId: new Types.ObjectId(flightId) };
-    const flag = { handoffPending: true };
-    const [cancelled, expired] = await Promise.all([
-      this.bookings.updateMany({ ...target, status: BookingStatus.Confirmed }, { $set: { status: BookingStatus.Cancelled, refundPercent: 100, ...flag } }).exec(),
-      this.bookings.updateMany({ ...target, status: BookingStatus.PendingPayment }, { $set: { status: BookingStatus.Expired, ...flag } }).exec(),
-    ]);
-    const rows = await this.bookings.find({ ...target, ...flag, status: { $in: [BookingStatus.Cancelled, BookingStatus.Expired] } }).select('_id userId status').lean().exec();
-    const idsOf = (status: BookingStatus) => rows.filter((r) => r.status === status).map((r) => String(r._id));
-    const cancelledIds = idsOf(BookingStatus.Cancelled), expiredIds = idsOf(BookingStatus.Expired);
-    // Notify only on the pass that actually flipped rows, so retries do not spam passengers.
-    if ((cancelled?.modifiedCount ?? 0) + (expired?.modifiedCount ?? 0) > 0) {
-      await this.notifications.notifyMany(rows.map((b) => b.userId).filter((u): u is Types.ObjectId => !!u), {
-        type: NotificationType.FlightCancelled, title: 'Flight cancelled',
-        message: 'Your flight was cancelled by the airline. Confirmed bookings are refunded in full.', link: `/flights/${flightId}`, data: { flightId },
+    let flight: unknown = old;
+    if (old.status !== FlightStatus.Cancelled) {
+      this.assertEditable(old);
+      flight = await this.guardedFlightUpdate(
+        { _id: id, airlineId: old.airlineId, status: FlightStatus.Scheduled, departureAt: { $gt: new Date() }, __v: old.__v },
+        { $set: { status: FlightStatus.Cancelled }, $inc: { __v: 1 } },
+      );
+    }
+    const result = await this.hooks.bookings.onFlightCancelled(id);
+    if (result.failed.length) {
+      this.logger.error(`Flight ${id} cancelled but refunds failed for ${result.failed.join(', ')}`);
+      throw new ServiceUnavailableException({
+        message: 'Flight cancelled, but some refunds could not be started. Repeat the cancel request to retry them.',
+        code: 'REFUND_HANDOFF_FAILED',
+        errors: [{ field: 'bookings', messages: result.failed }],
       });
     }
-    if (rows.length) {
-      try {
-        await this.hooks.runCancellation({ flightId, cancelledBookingIds: cancelledIds, expiredBookingIds: expiredIds, refundPercent: 100 });
-      } catch (error) {
-        this.logger.error(`Flight ${flightId} cancelled but refund handoff incomplete: ${(error as Error).message}`);
-        throw new ServiceUnavailableException('Flight cancelled but refund handoff failed; repeat the cancel request to retry');
-      }
-      await this.bookings.updateMany({ _id: { $in: rows.map((r) => r._id) } }, { $set: { handoffPending: false } }).exec();
-    }
-    return { cancelledBookings: cancelledIds.length, expiredBookings: expiredIds.length };
+    return { flight, cancelledBookings: result.cancelled, expiredBookings: result.expired };
   }
 
   private async scopedFlight(user: AuthUser, id: string) {
@@ -325,14 +285,6 @@ export class FlightsService {
     if (flight.status !== FlightStatus.Scheduled || flight.departureAt.getTime() <= Date.now()) {
       throw new ConflictException('Only scheduled future flights can be edited or cancelled');
     }
-  }
-
-  private async notifyPassengers(id: string, type: NotificationType, statuses: BookingStatus[]) {
-    const users = await this.bookings.distinct('userId', { flightId: id, status: { $in: statuses } }).exec();
-    await this.notifications.notifyMany(users, {
-      type, title: 'Flight schedule changed',
-      message: 'Please review your flight booking for the latest flight information.', link: `/flights/${id}`, data: { flightId: id },
-    });
   }
 
   /** Create a future flight under the caller's assigned airline with zero inventory usage. */
@@ -365,21 +317,32 @@ export class FlightsService {
   }
 
   /**
+   * Person 3 (FlightInventoryPort): flight plus its airline, for pricing and policy snapshots.
+   * Null when the flight does not exist.
+   */
+  async getForBooking(id: string) {
+    const flight = await this.flights.findById(id).lean().exec();
+    if (!flight) return null;
+    const airline = await this.airlines.findById(flight.airlineId).lean().exec();
+    return { flight, airline };
+  }
+
+  /**
    * Person 3: one conditional increment of held seats for a scheduled, future flight.
    * All requested seats must fit in this cabin. Returns false on missing flight/cabin,
    * stale lifecycle or insufficient availability; invalid cabin/count throws 400.
-   * These counter methods are not booking-idempotent: callers must coordinate retries
-   * with their booking state and must never apply the same hold/conversion twice.
+   * Pass `session` so the counters commit together with the booking status change.
+   * These counter methods are not booking-idempotent: callers must never apply the same move twice.
    */
-  reserveSeats(id: string, cabin: CabinType, count: number) { return this.inventory(id, cabin, count, 'reserve'); }
+  reserveSeats(id: string, cabin: CabinType, count: number, session?: ClientSession) { return this.inventory(id, cabin, count, 'reserve', session); }
   /** Person 3: atomically subtract held seats even after cancellation/departure; false if too few held. */
-  releaseSeats(id: string, cabin: CabinType, count: number) { return this.inventory(id, cabin, count, 'release'); }
-  /** Person 3 (FLT-26): atomically return booked seats after a user cancellation; false if fewer than count booked. */
-  releaseBookedSeats(id: string, cabin: CabinType, count: number) { return this.inventory(id, cabin, count, 'releaseBooked'); }
+  releaseSeats(id: string, cabin: CabinType, count: number, session?: ClientSession) { return this.inventory(id, cabin, count, 'release', session); }
+  /** Person 3 (FLT-26, FLT-06): atomically return booked seats after a cancellation; false if fewer than count booked. */
+  releaseBookedSeats(id: string, cabin: CabinType, count: number, session?: ClientSession) { return this.inventory(id, cabin, count, 'releaseBooked', session); }
   /** Person 3: atomically move held seats to booked; false if insufficient held or no longer bookable. */
-  convertHeldToBooked(id: string, cabin: CabinType, count: number) { return this.inventory(id, cabin, count, 'convert'); }
+  convertHeldToBooked(id: string, cabin: CabinType, count: number, session?: ClientSession) { return this.inventory(id, cabin, count, 'convert', session); }
 
-  private async inventory(id: string, cabin: CabinType, count: number, action: 'reserve' | 'release' | 'convert' | 'releaseBooked') {
+  private async inventory(id: string, cabin: CabinType, count: number, action: 'reserve' | 'release' | 'convert' | 'releaseBooked', session?: ClientSession) {
     if (!Number.isSafeInteger(count) || count <= 0 || !Object.values(CabinType).includes(cabin)) {
       throw new BadRequestException('Positive integer seat count and valid cabin required');
     }
@@ -395,15 +358,14 @@ export class FlightsService {
     const increment: Record<string, number> = action === 'releaseBooked' ? { 'cabins.$[c].booked': -count }
       : { 'cabins.$[c].held': action === 'reserve' ? count : -count };
     if (action === 'convert') increment['cabins.$[c].booked'] = count;
-    const result = await this.flights.updateOne(filter, { $inc: increment }, { arrayFilters: [{ 'c.cabin': cabin }] }).exec();
+    const result = await this.flights.updateOne(filter, { $inc: increment }, { arrayFilters: [{ 'c.cabin': cabin }], session }).exec();
     return result.modifiedCount === 1;
   }
 
-  /** FLT-30: idempotent minute sweep; two ordered updates catch up after downtime. */
+  /** FLT-30: idempotent minute sweep; Scheduled flights whose departure has passed become Departed. */
   @Cron('0 * * * * *')
   async advanceStatuses(now = new Date()) {
     await this.flights.updateMany({ status: FlightStatus.Scheduled, departureAt: { $lte: now } }, { $set: { status: FlightStatus.Departed } }).exec();
-    await this.flights.updateMany({ status: FlightStatus.Departed, arrivalAt: { $lte: now } }, { $set: { status: FlightStatus.Completed } }).exec();
   }
 
   /** Admin only even when called outside HTTP. Country must exist in reference data. */
