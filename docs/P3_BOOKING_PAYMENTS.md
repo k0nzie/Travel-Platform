@@ -57,8 +57,8 @@ FlightsService ──calls bridge──▶ countForFlight / listForFlight / expo
 
 ## 2. Person 4: paying for hotels
 
-1. Import `PaymentsModule`.
-2. Implement `BookingConfirmationHandler` ([interface](../backend/src/modules/payments/booking-confirmation-handler.interface.ts)) and register it in `onModuleInit`: `this.payments.registerHandler(BookingType.Hotel, this)`.
+1. Import `PaymentsModule` (it exports `PaymentsService` and `PaymentHooksService`).
+2. Implement `BookingConfirmationHandler` ([interface](../backend/src/modules/payments/booking-confirmation-handler.interface.ts)) and register it in `onModuleInit` with the injected `PaymentHooksService`: `this.paymentHooks.register(BookingType.Hotel, this)`.
 3. `onPaymentSucceeded` must be idempotent, and return `false` when the hold was lost: the customer is then refunded automatically.
 4. To expire a hold, call `payments.cancelOpenIntent(BookingType.Hotel, id)`.
 5. To cancel, inside your transaction call `queueRefund(BookingType.Hotel, id, amountMinor, reason, session)`. After the commit call `sendQueuedRefunds(result)`.

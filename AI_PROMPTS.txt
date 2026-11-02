@@ -51,3 +51,19 @@ sessions). Fixed the remaining Types.ObjectId schema props, the round-trip refun
 tier), the FLT-30 status set, refunds on payments that arrive after a flight is cancelled, and added
 the official PAY-02/PAY-01/PAY-03 endpoints. Updated the unit and e2e tests and the P3 guide.
 ================================================
+================================================
+Date: 2026-11-02
+Student: Kenzie (team leader)
+Tool: Claude
+Related Requirement: GEN-13, PAY-04, HTL-10 (conventions for all modules)
+Prompt:
+Is the project architecture good or messy, and can it be improved? Then: apply the formatting,
+id-normalisation, single hook pattern and develop-branch improvements, and write the conventions
+for the next person (Person 4, hotels).
+How the output was used:
+Added Prettier (one code style) and formatted the backend; added a global interceptor so every
+response uses `id` instead of `_id`/`__v`; moved the payment handler registry into
+PaymentHooksService so all three cross-module hooks follow one pattern; moved the shared
+cancellation-tier rules to common/; gave payment responses explicit types (fixed a TypeScript
+out-of-memory); extended docs/CONVENTIONS.md and wrote docs/P4_HOTELS_GUIDE.md.
+================================================
