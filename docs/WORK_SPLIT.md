@@ -53,6 +53,8 @@ Provides to Person 4: a generic `PaymentsService` that works with `type = flight
 
 ## Person 4 — Hotels, Rooms, Hotel Booking & Reviews
 
+Start with [P4_HOTELS_GUIDE.md](P4_HOTELS_GUIDE.md).
+
 | Area | Requirements |
 |---|---|
 | Hotel profile, photos, check-in/out times, cancellation tiers | HTL-01, HTL-02, HTL-09, HTL-10 |
