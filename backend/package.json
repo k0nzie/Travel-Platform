@@ -12,9 +12,11 @@
     "seed": "ts-node -r tsconfig-paths/register src/database/seed/seed.ts",
     "seed:flights": "ts-node src/modules/flights/seed/run.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "node --require ts-node/register --test src/modules/flights/flights.test.ts src/modules/flights/objectid-schema.test.ts",
+    "test": "node --require ts-node/register --test src/modules/flights/flights.test.ts src/modules/flights/objectid-schema.test.ts src/common/interceptors/serialize-ids.test.ts",
     "test:bookings": "node --test --test-force-exit -r ts-node/register test/flight-bookings.e2e.ts",
-    "lint": "node scripts/lint.cjs"
+    "lint": "node scripts/lint.cjs",
+    "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\" \"test/**/*.ts\""
   },
   "dependencies": {
     "@nestjs/common": "^11.0.0",
@@ -48,6 +50,7 @@
     "@types/node": "^22.10.0",
     "@types/pdfkit": "^0.17.7",
     "mongodb-memory-server": "^11.3.0",
+    "prettier": "^3.8.1",
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
     "typescript": "~5.6.3"

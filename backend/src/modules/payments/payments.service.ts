@@ -16,7 +16,7 @@ import { AuthUser } from '../../common/interfaces/auth-user.interface';
 import { assertOwner } from '../../common/utils/access.util';
 import { NotificationType } from '../notifications/schemas/notification.schema';
 import { NotificationsService } from '../notifications/notifications.service';
-import { BookingConfirmationHandler } from './booking-confirmation-handler.interface';
+import { PaymentHooksService } from './payment-hooks.service';
 import { CreatePaymentDto, TestConfirmDto } from './dto/payments.dto';
 import {
   OPEN_PAYMENT_STATUSES,
@@ -58,13 +58,52 @@ const refundView = (refund: Refund & { createdAt?: Date; updatedAt?: Date }) => 
 });
 
 /**
+ * Explicit response shape. Spreading a lean Mongoose document here makes TypeScript infer a
+ * huge type (slow builds, TS7056), so payments are always mapped field by field.
+ */
+export interface PaymentView {
+  id: string;
+  bookingType: BookingType;
+  bookingId: string;
+  bookingReference: string;
+  amountMinor: number;
+  currency: string;
+  status: PaymentStatus;
+  stripePaymentIntentId: string | null;
+  policiesAcceptedAt: Date;
+  failedAttempts: number;
+  lastError: string | null;
+  paidAt: Date | null;
+  refunds: ReturnType<typeof refundView>[];
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+const paymentView = (payment: Payment & { _id: Types.ObjectId }): PaymentView => ({
+  id: String(payment._id),
+  bookingType: payment.bookingType,
+  bookingId: String(payment.bookingId),
+  bookingReference: payment.bookingReference,
+  amountMinor: payment.amountMinor,
+  currency: payment.currency,
+  status: payment.status,
+  stripePaymentIntentId: payment.stripePaymentIntentId ?? null,
+  policiesAcceptedAt: payment.policiesAcceptedAt,
+  failedAttempts: payment.failedAttempts ?? 0,
+  lastError: payment.lastError ?? null,
+  paidAt: payment.paidAt ?? null,
+  refunds: (payment.refunds ?? []).map(refundView),
+  createdAt: payment.createdAt,
+  updatedAt: payment.updatedAt,
+});
+
+/**
  * Generic payments for both booking types (PAY-01, PAY-03, PAY-04). Everything
  * specific to flights or hotels sits behind BookingConfirmationHandler.
  */
 @Injectable()
 export class PaymentsService {
   private readonly logger = new Logger(PaymentsService.name);
-  private readonly handlers = new Map<BookingType, BookingConfirmationHandler>();
 
   constructor(
     @InjectModel(Payment.name) private readonly paymentModel: Model<PaymentDocument>,
@@ -72,22 +111,11 @@ export class PaymentsService {
     private readonly stripe: StripeService,
     private readonly notifications: NotificationsService,
     private readonly config: ConfigService,
+    private readonly hooks: PaymentHooksService,
   ) {}
 
-  registerHandler(type: BookingType, handler: BookingConfirmationHandler) {
-    this.handlers.set(type, handler);
-    this.logger.log(`Registered payment handler: ${type}`);
-  }
-
   private handlerFor(type: BookingType) {
-    const handler = this.handlers.get(type);
-    if (!handler) {
-      throw new BadRequestException({
-        message: `Payments for ${type} bookings are not available yet`,
-        code: 'BOOKING_TYPE_NOT_SUPPORTED',
-      });
-    }
-    return handler;
+    return this.hooks.handlerFor(type);
   }
 
   // ---------- checkout ----------
@@ -151,7 +179,12 @@ export class PaymentsService {
       throw new BadRequestException({
         message: 'Accept the booking policies before paying',
         code: 'POLICIES_NOT_ACCEPTED',
-        errors: [{ field: 'policies', messages: ['Policies must be accepted first (POST /bookings/:type/:id/accept-policies)'] }],
+        errors: [
+          {
+            field: 'policies',
+            messages: ['Policies must be accepted first (POST /bookings/:type/:id/accept-policies)'],
+          },
+        ],
       });
     }
     return this.ensureIntent(payment, ctx.holdExpiresAt);
@@ -204,16 +237,23 @@ export class PaymentsService {
     };
   }
 
-  async getOne(user: AuthUser, id: string) {
-    const payment = await this.paymentModel.findById(id).select('-policiesSnapshot').lean().exec();
+  async getOne(user: AuthUser, id: string): Promise<PaymentView> {
+    const payment = await this.paymentModel
+      .findById(id)
+      .select('-policiesSnapshot')
+      .lean<Payment & { _id: Types.ObjectId }>()
+      .exec();
     if (!payment) throw new NotFoundException('Payment not found');
     assertOwner(payment.userId, user, { allowAdmin: true, resource: 'Payment' });
-    return { ...payment, refunds: payment.refunds.map(refundView) };
+    return paymentView(payment);
   }
 
   /** PAY-03: one refund with its status (Pending, Refunded, Failed). Owner or admin. */
   async getRefund(user: AuthUser, refundId: string) {
-    const payment = await this.paymentModel.findOne({ 'refunds._id': new Types.ObjectId(refundId) }).lean().exec();
+    const payment = await this.paymentModel
+      .findOne({ 'refunds._id': new Types.ObjectId(refundId) })
+      .lean()
+      .exec();
     if (!payment) throw new NotFoundException('Refund not found');
     assertOwner(payment.userId, user, { allowAdmin: true, resource: 'Refund' });
     const refund = payment.refunds.find((r) => String(r._id) === refundId);
@@ -343,7 +383,9 @@ export class PaymentsService {
     );
 
     // Paid after the hold expired: the seats are gone, so the money goes straight back.
-    const lateRefund = confirmed ? {} : { $push: { refunds: { amountMinor: payment.amountMinor, reason: 'late_payment' } } };
+    const lateRefund = confirmed
+      ? {}
+      : { $push: { refunds: { amountMinor: payment.amountMinor, reason: 'late_payment' } } };
     const claimed = await this.paymentModel
       .findOneAndUpdate(
         { _id: payment._id, status: { $in: OPEN_PAYMENT_STATUSES } },

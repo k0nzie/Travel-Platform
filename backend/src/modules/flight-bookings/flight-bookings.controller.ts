@@ -5,11 +5,7 @@ import { Role } from '../../common/constants/enums';
 import { CurrentUser, Roles } from '../../common/decorators';
 import { AuthUser } from '../../common/interfaces/auth-user.interface';
 import { ParseObjectIdPipe } from '../../common/pipes/parse-object-id.pipe';
-import {
-  CancelFlightBookingDto,
-  CreateFlightBookingDto,
-  FlightBookingQueryDto,
-} from './dto/flight-booking.dto';
+import { CancelFlightBookingDto, CreateFlightBookingDto, FlightBookingQueryDto } from './dto/flight-booking.dto';
 import { FlightBookingsService } from './flight-bookings.service';
 
 @ApiTags('Flight bookings')
@@ -21,7 +17,9 @@ export class FlightBookingsController {
   @Post()
   @Roles(Role.User)
   @HttpCode(200)
-  @ApiOperation({ summary: 'FLT-12, FLT-19, FLT-21: validate passengers and baggage, return the booking summary (nothing held)' })
+  @ApiOperation({
+    summary: 'FLT-12, FLT-19, FLT-21: validate passengers and baggage, return the booking summary (nothing held)',
+  })
   summary(@Body() dto: CreateFlightBookingDto) {
     return this.bookings.quote(dto);
   }

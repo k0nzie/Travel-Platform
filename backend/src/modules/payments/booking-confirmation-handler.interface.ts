@@ -15,12 +15,11 @@ export interface BookingPaymentContext {
 }
 
 /**
- * Implemented once per booking type and registered with
- * PaymentsService.registerHandler() in onModuleInit:
+ * Implemented once per booking type and registered with PaymentHooksService in onModuleInit:
  *
- *   constructor(private payments: PaymentsService) {}
+ *   constructor(private readonly paymentHooks: PaymentHooksService) {}
  *   onModuleInit() {
- *     this.payments.registerHandler(BookingType.Hotel, this);
+ *     this.paymentHooks.register(BookingType.Hotel, this);
  *   }
  */
 export interface BookingConfirmationHandler {

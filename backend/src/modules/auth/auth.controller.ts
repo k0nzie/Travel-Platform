@@ -76,7 +76,9 @@ export class AuthController {
   @Patch('change-password')
   @AllowPendingPasswordChange()
   @ApiCookieAuth('access_token')
-  @ApiOperation({ summary: 'ACC-08: change password (also clears a pending forced change); other sessions are logged out' })
+  @ApiOperation({
+    summary: 'ACC-08: change password (also clears a pending forced change); other sessions are logged out',
+  })
   changePassword(@CurrentUser() user: AuthUser, @Body() dto: ChangePasswordDto) {
     return this.users.changePassword(user, dto.currentPassword, dto.newPassword);
   }

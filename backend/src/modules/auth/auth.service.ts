@@ -185,6 +185,9 @@ export class AuthService {
   }
 
   private sessionExpired() {
-    return new UnauthorizedException({ message: 'Your session has expired. Please log in again.', code: 'SESSION_EXPIRED' });
+    return new UnauthorizedException({
+      message: 'Your session has expired. Please log in again.',
+      code: 'SESSION_EXPIRED',
+    });
   }
 }

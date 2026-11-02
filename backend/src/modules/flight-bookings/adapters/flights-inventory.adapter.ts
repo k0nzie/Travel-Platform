@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ClientSession } from 'mongoose';
-import { computeRefundPercent } from '../../flights/flight-policy';
+import { computeRefundPercent } from '../../../common/utils/cancellation-tiers';
 import { FlightsService } from '../../flights/flights.service';
 import { AirlineStatus } from '../../flights/schemas/airline.schema';
 import { CabinType, FlightStatus } from '../../flights/schemas/flight.schema';
@@ -72,7 +72,10 @@ export class FlightsInventoryAdapter implements FlightInventoryPort {
           },
         };
       }),
-      cancellationTiers: (airline?.cancellationTiers ?? []).map(({ minDays, refundPercent }) => ({ minDays, refundPercent })),
+      cancellationTiers: (airline?.cancellationTiers ?? []).map(({ minDays, refundPercent }) => ({
+        minDays,
+        refundPercent,
+      })),
     };
   }
 

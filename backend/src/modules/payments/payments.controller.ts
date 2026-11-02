@@ -1,4 +1,15 @@
-import { Body, Controller, Get, Headers, HttpCode, Param, ParseEnumPipe, Post, RawBodyRequest, Req } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Headers,
+  HttpCode,
+  Param,
+  ParseEnumPipe,
+  Post,
+  RawBodyRequest,
+  Req,
+} from '@nestjs/common';
 import { ApiCookieAuth, ApiExcludeEndpoint, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Request } from 'express';
 import { BookingType, Role } from '../../common/constants/enums';
@@ -87,11 +98,7 @@ export class PaymentsController {
   @Roles(Role.User)
   @HttpCode(200)
   @ApiOperation({ summary: 'Test keys only: pay with a Stripe test card (no card form until Milestone 2)' })
-  testConfirm(
-    @CurrentUser() user: AuthUser,
-    @Param('id', ParseObjectIdPipe) id: string,
-    @Body() dto: TestConfirmDto,
-  ) {
+  testConfirm(@CurrentUser() user: AuthUser, @Param('id', ParseObjectIdPipe) id: string, @Body() dto: TestConfirmDto) {
     return this.payments.testConfirm(user, id, dto);
   }
 }

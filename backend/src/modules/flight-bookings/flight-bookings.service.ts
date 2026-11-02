@@ -28,21 +28,14 @@ import {
 } from '../flights/flight-hooks.service';
 import { NotificationType } from '../notifications/schemas/notification.schema';
 import { NotificationsService } from '../notifications/notifications.service';
-import {
-  BookingConfirmationHandler,
-  BookingPaymentContext,
-} from '../payments/booking-confirmation-handler.interface';
+import { BookingConfirmationHandler, BookingPaymentContext } from '../payments/booking-confirmation-handler.interface';
+import { PaymentHooksService } from '../payments/payment-hooks.service';
 import { PaymentsService } from '../payments/payments.service';
 import { ReferenceDataService } from '../reference-data/reference-data.service';
 import { AccountHooksService } from '../users/account-hooks.service';
 import { CreateFlightBookingDto, FlightBookingQueryDto, PassengerDto } from './dto/flight-booking.dto';
 import { ETicketService } from './e-ticket.service';
-import {
-  FLIGHT_INVENTORY,
-  FlightInventoryPort,
-  FlightSnapshot,
-  PassengerType,
-} from './ports/flight-inventory.port';
+import { FLIGHT_INVENTORY, FlightInventoryPort, FlightSnapshot, PassengerType } from './ports/flight-inventory.port';
 import { BookingLeg, FlightBooking, FlightBookingDocument } from './schemas/flight-booking.schema';
 
 const HOLD_MINUTES = 10; // FLT-22
@@ -55,7 +48,10 @@ const JOB_BATCH = 200;
 /** Never leaves the service in lists shown to moderators or admins. */
 const STAFF_SAFE_SELECT = '-passengers.passportNumber -passengers.dateOfBirth';
 
-type StaffBookingDoc = Pick<FlightBooking, 'reference' | 'legs' | 'passengers' | 'seatCount' | 'status' | 'createdAt'> & {
+type StaffBookingDoc = Pick<
+  FlightBooking,
+  'reference' | 'legs' | 'passengers' | 'seatCount' | 'status' | 'createdAt'
+> & {
   _id: Types.ObjectId;
 };
 
@@ -77,10 +73,12 @@ export class FlightBookingsService implements OnModuleInit, BookingConfirmationH
     private readonly eTickets: ETicketService,
     private readonly config: ConfigService,
     private readonly flightHooks: FlightHooksService,
+    private readonly paymentHooks: PaymentHooksService,
   ) {}
 
   onModuleInit() {
-    this.payments.registerHandler(BookingType.Flight, this);
+    // Cross-module hooks (docs/CONVENTIONS.md): payments, flights and accounts call back into bookings.
+    this.paymentHooks.register(BookingType.Flight, this);
     // FLT-05, FLT-06, FLT-29: flights calls back through this bridge instead of touching bookings.
     this.flightHooks.register(this);
     // ACC-12: flights still ahead, or under way, block deactivation.
@@ -242,11 +240,7 @@ export class FlightBookingsService implements OnModuleInit, BookingConfirmationH
       if (born > DateTime.utc()) throw fail(`passengers.${i}.dateOfBirth`, 'Date of birth is in the future');
       const age = Math.floor(departure.diff(born, 'years').years);
       const actual =
-        age >= ADULT_MIN_AGE
-          ? PassengerType.Adult
-          : age >= CHILD_MIN_AGE
-            ? PassengerType.Child
-            : PassengerType.Infant;
+        age >= ADULT_MIN_AGE ? PassengerType.Adult : age >= CHILD_MIN_AGE ? PassengerType.Child : PassengerType.Infant;
       if (actual !== p.type) {
         throw fail(`passengers.${i}.type`, `Passenger is ${age} at departure, which is a ${actual} fare`);
       }
@@ -402,7 +396,10 @@ export class FlightBookingsService implements OnModuleInit, BookingConfirmationH
       filter.status ??= { $in: [BookingStatus.PendingPayment, BookingStatus.Confirmed] };
     } else if (query.scope === 'past') {
       filter.status ??= { $in: [BookingStatus.Confirmed, BookingStatus.Completed, BookingStatus.Expired] };
-      filter.$or = [{ departureAt: { $lte: now } }, { status: { $in: [BookingStatus.Completed, BookingStatus.Expired] } }];
+      filter.$or = [
+        { departureAt: { $lte: now } },
+        { status: { $in: [BookingStatus.Completed, BookingStatus.Expired] } },
+      ];
     } else if (query.scope === 'cancelled') {
       filter.status = BookingStatus.Cancelled;
     }
@@ -530,7 +527,10 @@ export class FlightBookingsService implements OnModuleInit, BookingConfirmationH
       );
       if (cancellation.refundMinor > 0 && !refundRecord) {
         // Booking confirmed but its payment isn't marked paid yet. Roll back, never lose a refund.
-        throw new ConflictException({ message: 'Your payment is still settling. Try again shortly.', code: 'PAYMENT_SETTLING' });
+        throw new ConflictException({
+          message: 'Your payment is still settling. Try again shortly.',
+          code: 'PAYMENT_SETTLING',
+        });
       }
       return updated;
     });
@@ -571,21 +571,24 @@ export class FlightBookingsService implements OnModuleInit, BookingConfirmationH
     if (!expired) return;
 
     await this.payments.cancelOpenIntent(BookingType.Flight, id);
-    await this.notifications.notify(expired.userId, flightCancelled
-      ? {
-          type: NotificationType.FlightCancelled,
-          title: 'Your flight was cancelled',
-          message: `The airline cancelled a flight on unpaid booking ${expired.reference}; the seat hold was released.`,
-          link: this.link(expired),
-          data: { bookingId: String(expired._id), reference: expired.reference },
-        }
-      : {
-          type: NotificationType.BookingExpired,
-          title: 'Booking hold expired',
-          message: `Booking ${expired.reference} was not paid within ${HOLD_MINUTES} minutes and has expired.`,
-          link: this.link(expired),
-          data: { bookingId: String(expired._id), reference: expired.reference },
-        });
+    await this.notifications.notify(
+      expired.userId,
+      flightCancelled
+        ? {
+            type: NotificationType.FlightCancelled,
+            title: 'Your flight was cancelled',
+            message: `The airline cancelled a flight on unpaid booking ${expired.reference}; the seat hold was released.`,
+            link: this.link(expired),
+            data: { bookingId: String(expired._id), reference: expired.reference },
+          }
+        : {
+            type: NotificationType.BookingExpired,
+            title: 'Booking hold expired',
+            message: `Booking ${expired.reference} was not paid within ${HOLD_MINUTES} minutes and has expired.`,
+            link: this.link(expired),
+            data: { bookingId: String(expired._id), reference: expired.reference },
+          },
+    );
     return expired;
   }
 
@@ -660,7 +663,8 @@ export class FlightBookingsService implements OnModuleInit, BookingConfirmationH
       {
         type: NotificationType.FlightScheduleChanged,
         title: 'Your flight schedule changed',
-        message: `Flight ${flight.flightNumber} now departs at ` +
+        message:
+          `Flight ${flight.flightNumber} now departs at ` +
           `${utcToLocalIso(flight.departureAt, flight.origin.timezone)} local time.`,
         data: { flightId },
       },

@@ -1,8 +1,8 @@
 import { ClientSession } from 'mongoose';
-import { CancellationTier } from '../../flights/flight-policy';
+import { CancellationTier } from '../../../common/utils/cancellation-tiers';
 import { CabinType } from '../../flights/schemas/flight.schema';
 
-export { CancellationTier };
+export type { CancellationTier };
 
 /**
  * Everything flight booking needs from the flights module, in the shape bookings
@@ -73,7 +73,12 @@ export interface FlightInventoryPort {
   releaseSeats(flightId: string, cabinClass: CabinType, count: number, session?: ClientSession): Promise<boolean>;
 
   /** held -> booked (payment confirmed). False if the flight is no longer bookable. */
-  convertHeldToBooked(flightId: string, cabinClass: CabinType, count: number, session?: ClientSession): Promise<boolean>;
+  convertHeldToBooked(
+    flightId: string,
+    cabinClass: CabinType,
+    count: number,
+    session?: ClientSession,
+  ): Promise<boolean>;
 
   /** booked -> available (confirmed booking cancelled). */
   releaseBookedSeats(flightId: string, cabinClass: CabinType, count: number, session?: ClientSession): Promise<boolean>;
