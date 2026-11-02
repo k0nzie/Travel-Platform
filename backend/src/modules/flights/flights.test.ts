@@ -4,8 +4,19 @@ import assert from 'node:assert/strict';
 
 test('refund tiers are inclusive, order independent, and never refund after departure', () => {
   const { computeRefundPercent } = require('./flight-policy');
-  const tiers = [{ minDays: 7, refundPercent: 100 }, { minDays: 2, refundPercent: 50 }];
-  for (const [days, expected] of [[8, 100], [7, 100], [6.99, 50], [2, 50], [1, 0], [0, 0], [-1, 0]]) {
+  const tiers = [
+    { minDays: 7, refundPercent: 100 },
+    { minDays: 2, refundPercent: 50 },
+  ];
+  for (const [days, expected] of [
+    [8, 100],
+    [7, 100],
+    [6.99, 50],
+    [2, 50],
+    [1, 0],
+    [0, 0],
+    [-1, 0],
+  ]) {
     assert.equal(computeRefundPercent(tiers, days), expected);
   }
   assert.equal(computeRefundPercent([...tiers].reverse(), 7), 100);
@@ -16,14 +27,62 @@ test('refund tiers are inclusive, order independent, and never refund after depa
 
 const airlineId = '507f1f77bcf86cd799439011';
 const flightId = '507f1f77bcf86cd799439012';
-const moderator: any = { id: airlineId, role: 'airline_moderator', moderatorAssignment: { providerType: 'airline', providerId: airlineId } };
-const query = (value: any) => ({ exec: async () => value, lean() { return this; }, sort() { return this; }, select() { return this; }, skip() { return this; }, limit() { return this; } });
+const moderator: any = {
+  id: airlineId,
+  role: 'airline_moderator',
+  moderatorAssignment: { providerType: 'airline', providerId: airlineId },
+};
+const query = (value: any) => ({
+  exec: async () => value,
+  lean() {
+    return this;
+  },
+  sort() {
+    return this;
+  },
+  select() {
+    return this;
+  },
+  skip() {
+    return this;
+  },
+  limit() {
+    return this;
+  },
+});
 function fixture(overrides: any = {}) {
   const calls: any[] = [];
-  const activeAirline = { _id: airlineId, name: 'Test Air', code: 'TA', countryCode: 'EG', status: 'active', baggagePolicy: { extraBagPrice: 25, maxExtraBagsPerPassenger: 2, cabins: [] }, cancellationTiers: [{ minDays: 7, refundPercent: 100 }] };
-  const airlines = { create: async (data: any) => ({ _id: airlineId, ...data }), find: () => query([activeAirline]), findById: () => query(activeAirline), findByIdAndUpdate: (...args: any[]) => { calls.push(['airlineUpdate', ...args]); return query({ _id: airlineId }); } };
-  const reference = { assertCountryCodes: async (v: any) => { calls.push(['countries', v]); return v; }, assertSupportedCurrency: async (v: any) => v };
-  const media = { saveImages: async (v: any) => { calls.push(['media', v]); return [{ id: flightId, url: '/uploads/logo.png' }]; } };
+  const activeAirline = {
+    _id: airlineId,
+    name: 'Test Air',
+    code: 'TA',
+    countryCode: 'EG',
+    status: 'active',
+    baggagePolicy: { extraBagPrice: 25, maxExtraBagsPerPassenger: 2, cabins: [] },
+    cancellationTiers: [{ minDays: 7, refundPercent: 100 }],
+  };
+  const airlines = {
+    create: async (data: any) => ({ _id: airlineId, ...data }),
+    find: () => query([activeAirline]),
+    findById: () => query(activeAirline),
+    findByIdAndUpdate: (...args: any[]) => {
+      calls.push(['airlineUpdate', ...args]);
+      return query({ _id: airlineId });
+    },
+  };
+  const reference = {
+    assertCountryCodes: async (v: any) => {
+      calls.push(['countries', v]);
+      return v;
+    },
+    assertSupportedCurrency: async (v: any) => v,
+  };
+  const media = {
+    saveImages: async (v: any) => {
+      calls.push(['media', v]);
+      return [{ id: flightId, url: '/uploads/logo.png' }];
+    },
+  };
   const audit = { log: async (...args: any[]) => calls.push(['audit', ...args]) };
   const { FlightsService } = require('./flights.service');
   const { FlightHooksService } = require('./flight-hooks.service');
@@ -34,11 +93,22 @@ function fixture(overrides: any = {}) {
     listForFlight: async () => ({ items: [], page: 1, limit: 10, total: 0, totalPages: 1 }),
     exportForFlight: async () => [],
     onFlightCancelled: async () => ({ cancelled: 0, expired: 0, failed: [] }),
-    onScheduleChanged: async (id: string) => { calls.push(['schedule', id]); return { updated: 0 }; },
+    onScheduleChanged: async (id: string) => {
+      calls.push(['schedule', id]);
+      return { updated: 0 };
+    },
     ...overrides.bridge,
   };
   if (!overrides.noBridge) hooks.register(bridge);
-  const service = new FlightsService({ exists: () => query(null), ...overrides.flights }, overrides.airlines ?? airlines, overrides.reference ?? reference, media, audit, { get: () => 'USD' }, hooks);
+  const service = new FlightsService(
+    { exists: () => query(null), ...overrides.flights },
+    overrides.airlines ?? airlines,
+    overrides.reference ?? reference,
+    media,
+    audit,
+    { get: () => 'USD' },
+    hooks,
+  );
   return { service, calls, hooks, bridge };
 }
 
@@ -46,7 +116,10 @@ test('airline creation enforces admin in service, validates countries, and audit
   const { service, calls } = fixture();
   await assert.rejects(service.createAirline(moderator, { name: 'Test Air', code: 'TA', countryCode: 'EG' }), /Admin/);
   assert.equal(calls.length, 0);
-  const result = await service.createAirline({ ...moderator, role: 'admin' }, { name: 'Test Air', code: 'TA', countryCode: 'EG' });
+  const result = await service.createAirline(
+    { ...moderator, role: 'admin' },
+    { name: 'Test Air', code: 'TA', countryCode: 'EG' },
+  );
   assert.equal(result.name, 'Test Air');
   assert.equal(calls[0][0], 'countries');
   assert.equal(calls[1][0], 'audit');
@@ -77,12 +150,26 @@ test('airline DTO and schema reject malformed identity and unknown fields', asyn
 });
 
 const input: any = {
-  airlineId, flightNumber: 'TA101', origin: 'CAI', destination: 'LHR',
-  departureLocal: '2030-11-05T10:00', arrivalLocal: '2030-11-05T13:00', currency: 'USD',
+  airlineId,
+  flightNumber: 'TA101',
+  origin: 'CAI',
+  destination: 'LHR',
+  departureLocal: '2030-11-05T10:00',
+  arrivalLocal: '2030-11-05T13:00',
+  currency: 'USD',
   cabins: [{ cabin: 'Economy', capacity: 10, price: 100 }],
 };
-const airports: any = { CAI: { _id: airlineId, iataCode: 'CAI', timezone: 'Africa/Cairo' }, LHR: { _id: flightId, iataCode: 'LHR', timezone: 'Europe/London' } };
-const refs: any = { resolveAirport: async (v: string) => { if (!airports[v]) throw Error('Unknown airport'); return airports[v]; }, assertSupportedCurrency: async (v: string) => v };
+const airports: any = {
+  CAI: { _id: airlineId, iataCode: 'CAI', timezone: 'Africa/Cairo' },
+  LHR: { _id: flightId, iataCode: 'LHR', timezone: 'Europe/London' },
+};
+const refs: any = {
+  resolveAirport: async (v: string) => {
+    if (!airports[v]) throw Error('Unknown airport');
+    return airports[v];
+  },
+  assertSupportedCurrency: async (v: string) => v,
+};
 
 test('flight creation validates scope, reference airports, UTC chronology and initializes counters', async () => {
   const { service } = fixture({ reference: refs, flights: { create: async (v: any) => v, exists: () => query(null) } });
@@ -92,7 +179,14 @@ test('flight creation validates scope, reference airports, UTC chronology and in
   assert.equal(created.arrivalAt.toISOString(), '2030-11-05T13:00:00.000Z');
   assert.equal(created.cabins[0].held, 0);
   assert.equal(created.cabins[0].booked, 0);
-  for (const change of [{ destination: 'CAI' }, { arrivalLocal: '2030-11-05T01:00' }, { departureLocal: '2020-01-01T10:00' }, { departureLocal: '2030-11-05T10:00Z' }, { cabins: [input.cabins[0], input.cabins[0]] }, { currency: 'EUR' }]) {
+  for (const change of [
+    { destination: 'CAI' },
+    { arrivalLocal: '2030-11-05T01:00' },
+    { departureLocal: '2020-01-01T10:00' },
+    { departureLocal: '2030-11-05T10:00Z' },
+    { cabins: [input.cabins[0], input.cabins[0]] },
+    { currency: 'EUR' },
+  ]) {
     await assert.rejects(service.createFlight(moderator, { ...input, ...change }));
   }
 });
@@ -102,7 +196,11 @@ test('nested DTO validation rejects counters, negative prices, invalid policies,
   const { buildValidationPipe } = require('../../common/pipes/validation');
   const pipe = buildValidationPipe();
   assert.ok(await pipe.transform(input, { type: 'body', metatype: CreateFlightDto }));
-  for (const change of [{ cabins: [{ ...input.cabins[0], held: 3 }] }, { cabins: [{ ...input.cabins[0], price: -1 }] }, { departureLocal: 'garbage' }]) {
+  for (const change of [
+    { cabins: [{ ...input.cabins[0], held: 3 }] },
+    { cabins: [{ ...input.cabins[0], price: -1 }] },
+    { departureLocal: 'garbage' },
+  ]) {
     await assert.rejects(pipe.transform({ ...input, ...change }, { type: 'body', metatype: CreateFlightDto }));
   }
   await assert.rejects(pipe.transform({ cabins: null }, { type: 'body', metatype: UpdateFlightDto }));
@@ -110,7 +208,14 @@ test('nested DTO validation rejects counters, negative prices, invalid policies,
 
 test('atomic inventory calls guard the same cabin, counters, status and departure; release works after cancellation', async () => {
   const calls: any[] = [];
-  const { service } = fixture({ flights: { updateOne: (...args: any[]) => { calls.push(args); return query({ modifiedCount: 1 }); } } });
+  const { service } = fixture({
+    flights: {
+      updateOne: (...args: any[]) => {
+        calls.push(args);
+        return query({ modifiedCount: 1 });
+      },
+    },
+  });
   assert.equal(await service.reserveSeats(flightId, 'Economy', 2), true);
   assert.equal(calls[0][0].status, 'Scheduled');
   assert.ok(calls[0][0].departureAt.$gt instanceof Date);
@@ -131,7 +236,14 @@ test('atomic inventory calls guard the same cabin, counters, status and departur
 
 test('lifecycle uses guarded updates, skips cancelled flights, and catches up after downtime', async () => {
   const calls: any[] = [];
-  const { service } = fixture({ flights: { updateMany: (...args: any[]) => { calls.push(args); return query({ modifiedCount: 1 }); } } });
+  const { service } = fixture({
+    flights: {
+      updateMany: (...args: any[]) => {
+        calls.push(args);
+        return query({ modifiedCount: 1 });
+      },
+    },
+  });
   const now = new Date('2030-11-06T00:00Z');
   await service.advanceStatuses(now);
   assert.equal(calls.length, 1, 'FLT-30 has no state after Departed');
@@ -140,30 +252,64 @@ test('lifecycle uses guarded updates, skips cancelled flights, and catches up af
 });
 
 const storedFlight = () => ({
-  ...input, _id: flightId, __v: 0, status: 'Scheduled', originTimezone: 'Africa/Cairo', destinationTimezone: 'Europe/London',
-  departureAt: new Date('2030-11-05T08:00Z'), departureDay: '2030-11-05', arrivalAt: new Date('2030-11-05T13:00Z'),
+  ...input,
+  _id: flightId,
+  __v: 0,
+  status: 'Scheduled',
+  originTimezone: 'Africa/Cairo',
+  destinationTimezone: 'Europe/London',
+  departureAt: new Date('2030-11-05T08:00Z'),
+  departureDay: '2030-11-05',
+  arrivalAt: new Date('2030-11-05T13:00Z'),
   cabins: [{ cabin: 'Economy', capacity: 10, price: 100, held: 2, booked: 3 }],
 });
 
 test('flight edit preserves counters and compares inventory snapshot to reject concurrent holds', async () => {
   const calls: any[] = [];
   const stored = storedFlight();
-  const { service } = fixture({ reference: refs, flights: { findById: () => query(stored), findOneAndUpdate: (...args: any[]) => { calls.push(args); return query(stored); } } });
+  const { service } = fixture({
+    reference: refs,
+    flights: {
+      findById: () => query(stored),
+      findOneAndUpdate: (...args: any[]) => {
+        calls.push(args);
+        return query(stored);
+      },
+    },
+  });
   await service.updateFlight(moderator, flightId, { cabins: [{ cabin: 'Economy', capacity: 6, price: 150 }] });
   assert.deepEqual(calls[0][0].cabins, stored.cabins);
   assert.equal(calls[0][0].__v, 0);
   assert.equal(calls[0][1].$set.cabins[0].held, 2);
   assert.equal(calls[0][1].$set.cabins[0].booked, 3);
-  await assert.rejects(service.updateFlight(moderator, flightId, { cabins: [{ cabin: 'Economy', capacity: 4, price: 150 }] }), /booked or held/);
-  await assert.rejects(service.updateFlight(moderator, flightId, { cabins: [{ cabin: 'Business', capacity: 6, price: 150 }] }), /not on this flight/);
-  const racing = fixture({ reference: refs, flights: { findById: () => query(stored), findOneAndUpdate: () => query(null) } }).service;
+  await assert.rejects(
+    service.updateFlight(moderator, flightId, { cabins: [{ cabin: 'Economy', capacity: 4, price: 150 }] }),
+    /booked or held/,
+  );
+  await assert.rejects(
+    service.updateFlight(moderator, flightId, { cabins: [{ cabin: 'Business', capacity: 6, price: 150 }] }),
+    /not on this flight/,
+  );
+  const racing = fixture({
+    reference: refs,
+    flights: { findById: () => query(stored), findOneAndUpdate: () => query(null) },
+  }).service;
   await assert.rejects(racing.updateFlight(moderator, flightId, { departureLocal: '2030-11-05T11:00' }), /changed/);
 });
 
 test('edit and cancel enforce provider scope and scheduled future lifecycle; notify after successful mutation', async () => {
   let stored = storedFlight();
   const mutations: any[] = [];
-  const { service, calls } = fixture({ reference: refs, flights: { findById: () => query(stored), findOneAndUpdate: (...args: any[]) => { mutations.push(args); return query({ ...stored, status: 'Cancelled' }); } } });
+  const { service, calls } = fixture({
+    reference: refs,
+    flights: {
+      findById: () => query(stored),
+      findOneAndUpdate: (...args: any[]) => {
+        mutations.push(args);
+        return query({ ...stored, status: 'Cancelled' });
+      },
+    },
+  });
   const stranger = { ...moderator, moderatorAssignment: { providerType: 'airline', providerId: flightId } };
   await assert.rejects(service.cancelFlight(stranger, flightId), /assigned airline/);
   await assert.rejects(service.updateFlight(stranger, flightId, {}), /assigned airline/);
@@ -183,11 +329,39 @@ test('edit and cancel enforce provider scope and scheduled future lifecycle; not
 
 test('local-date search uses origin timezone, availability, matched cabin prices and deterministic ordering', async () => {
   const filters: any[] = [];
-  const a = { ...storedFlight(), _id: 'a', cabins: [{ cabin: 'Economy', capacity: 4, held: 1, booked: 1, price: 200 }, { cabin: 'Business', capacity: 10, held: 0, booked: 0, price: 50 }] };
+  const a = {
+    ...storedFlight(),
+    _id: 'a',
+    cabins: [
+      { cabin: 'Economy', capacity: 4, held: 1, booked: 1, price: 200 },
+      { cabin: 'Business', capacity: 10, held: 0, booked: 0, price: 50 },
+    ],
+  };
   const b = { ...a, _id: 'b' };
   const full = { ...a, _id: 'full', cabins: [{ ...a.cabins[0], held: 4 }] };
-  const { service } = fixture({ reference: refs, flights: { find: (filter: any) => { filters.push(filter); return query([b, full, a]); } } });
-  const result = await service.search({ origin: 'CAI', destination: 'LHR', departureDate: '2030-11-05', adults: 1, children: 1, infants: 1, cabin: 'Economy', sort: 'price', minPrice: 150, maxPrice: 250, limit: 1, page: 2 });
+  const { service } = fixture({
+    reference: refs,
+    flights: {
+      find: (filter: any) => {
+        filters.push(filter);
+        return query([b, full, a]);
+      },
+    },
+  });
+  const result = await service.search({
+    origin: 'CAI',
+    destination: 'LHR',
+    departureDate: '2030-11-05',
+    adults: 1,
+    children: 1,
+    infants: 1,
+    cabin: 'Economy',
+    sort: 'price',
+    minPrice: 150,
+    maxPrice: 250,
+    limit: 1,
+    page: 2,
+  });
   assert.equal(filters[0].departureAt.$gte.toISOString(), '2030-11-04T22:00:00.000Z');
   assert.equal(filters[0].departureAt.$lt.toISOString(), '2030-11-05T22:00:00.000Z');
   assert.equal(filters[0].status, 'Scheduled');
@@ -197,18 +371,49 @@ test('local-date search uses origin timezone, availability, matched cabin prices
   assert.equal(result.items[0].totalPrice, 420); // 200*(1 adult+1 child) + 200*1 infant*0.1
   assert.equal(result.items[0].outbound.cabins.length, 1);
   assert.equal(result.items[0].outbound.cabins[0].available, 2);
-  for (const change of [{ infants: 2 }, { returnDate: '2030-11-04' }, { departureDate: '2030-02-30' }, { minPrice: 300, maxPrice: 100 }, { destination: 'CAI' }]) {
-    await assert.rejects(service.search({ origin: 'CAI', destination: 'LHR', departureDate: '2030-11-05', adults: 1, ...change }));
+  for (const change of [
+    { infants: 2 },
+    { returnDate: '2030-11-04' },
+    { departureDate: '2030-02-30' },
+    { minPrice: 300, maxPrice: 100 },
+    { destination: 'CAI' },
+  ]) {
+    await assert.rejects(
+      service.search({ origin: 'CAI', destination: 'LHR', departureDate: '2030-11-05', adults: 1, ...change }),
+    );
   }
 });
 
 test('round-trip search reverses route and timezone, pairs chronologically and sorts combined fares', async () => {
   const filters: any[] = [];
   const out = { ...storedFlight(), _id: 'out' };
-  const back = { ...storedFlight(), _id: 'back', origin: 'LHR', destination: 'CAI', originTimezone: 'Europe/London', destinationTimezone: 'Africa/Cairo', departureAt: new Date('2030-11-06T08:00Z'), arrivalAt: new Date('2030-11-06T13:00Z') };
+  const back = {
+    ...storedFlight(),
+    _id: 'back',
+    origin: 'LHR',
+    destination: 'CAI',
+    originTimezone: 'Europe/London',
+    destinationTimezone: 'Africa/Cairo',
+    departureAt: new Date('2030-11-06T08:00Z'),
+    arrivalAt: new Date('2030-11-06T13:00Z'),
+  };
   const early = { ...back, _id: 'early', departureAt: new Date('2030-11-05T07:00Z') };
-  const { service } = fixture({ reference: refs, flights: { find: (filter: any) => { filters.push(filter); return query(filter.origin === 'CAI' ? [out] : [early, back]); } } });
-  const result = await service.search({ origin: 'CAI', destination: 'LHR', departureDate: '2030-11-05', returnDate: '2030-11-06', adults: 1 });
+  const { service } = fixture({
+    reference: refs,
+    flights: {
+      find: (filter: any) => {
+        filters.push(filter);
+        return query(filter.origin === 'CAI' ? [out] : [early, back]);
+      },
+    },
+  });
+  const result = await service.search({
+    origin: 'CAI',
+    destination: 'LHR',
+    departureDate: '2030-11-05',
+    returnDate: '2030-11-06',
+    adults: 1,
+  });
   assert.equal(filters[1].origin, 'LHR');
   assert.equal(filters[1].departureAt.$gte.toISOString(), '2030-11-06T00:00:00.000Z');
   assert.equal(result.total, 1);
@@ -245,13 +450,37 @@ test('airport local validation rejects DST gaps, overlaps, offsets and invalid d
 
 test('booking list and CSV share scope and filters, delegate to the bookings bridge and escape RFC4180 cells', async () => {
   const seen: any[] = [];
-  const rows = [{ id: 'b1', reference: 'A,"B"\r\nC', status: 'confirmed', cabin: 'Economy', seats: 2, passengerNames: ['Alice Smith', 'Bob Jones'], createdAt: new Date('2030-01-01T00:00Z') }];
+  const rows = [
+    {
+      id: 'b1',
+      reference: 'A,"B"\r\nC',
+      status: 'confirmed',
+      cabin: 'Economy',
+      seats: 2,
+      passengerNames: ['Alice Smith', 'Bob Jones'],
+      createdAt: new Date('2030-01-01T00:00Z'),
+    },
+  ];
   const bridge = {
-    listForFlight: async (id: string, q: any) => { seen.push(['list', id, q]); return { items: rows, page: 1, limit: 10, total: 1, totalPages: 1 }; },
-    exportForFlight: async (id: string, q: any, max: number) => { seen.push(['export', id, q, max]); return rows; },
+    listForFlight: async (id: string, q: any) => {
+      seen.push(['list', id, q]);
+      return { items: rows, page: 1, limit: 10, total: 1, totalPages: 1 };
+    },
+    exportForFlight: async (id: string, q: any, max: number) => {
+      seen.push(['export', id, q, max]);
+      return rows;
+    },
   };
   const { service } = fixture({ flights: { findById: () => query(storedFlight()) }, bridge });
-  const q = { status: 'confirmed', cabin: 'Economy', reference: 'A.*', from: '2030-01-01', to: '2030-01-02', page: 1, limit: 10 };
+  const q = {
+    status: 'confirmed',
+    cabin: 'Economy',
+    reference: 'A.*',
+    from: '2030-01-01',
+    to: '2030-01-02',
+    page: 1,
+    limit: 10,
+  };
   const result = await service.listBookings(moderator, flightId, q);
   const csv = await service.bookingsCsv(moderator, flightId, q);
   assert.equal(result.total, 1);
@@ -269,7 +498,15 @@ test('booking list and CSV share scope and filters, delegate to the bookings bri
 
 test('CSV handles null, commas, quotes, CR/LF, unicode and spreadsheet formulas', () => {
   const { csvCell } = require('./booking-csv');
-  for (const [input, expected] of [[null, '""'], [undefined, '""'], ['a,b', '"a,b"'], ['"x"', '"""x"""'], ['a\nb', '"a\nb"'], ['???', '"???"'], ['=SUM(A1)', '"\'=SUM(A1)"']]) {
+  for (const [input, expected] of [
+    [null, '""'],
+    [undefined, '""'],
+    ['a,b', '"a,b"'],
+    ['"x"', '"""x"""'],
+    ['a\nb', '"a\nb"'],
+    ['???', '"???"'],
+    ['=SUM(A1)', '"\'=SUM(A1)"'],
+  ]) {
     assert.equal(csvCell(input), expected);
   }
 });
@@ -291,7 +528,15 @@ test('simultaneous reserve operations cannot oversell cabin capacity', async () 
       },
     }),
   };
-  const service = new FlightsService(flightsMock as any, {} as any, {} as any, {} as any, {} as any, { get: () => 'USD' } as any, new (require('./flight-hooks.service').FlightHooksService)());
+  const service = new FlightsService(
+    flightsMock as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    { get: () => 'USD' } as any,
+    new (require('./flight-hooks.service').FlightHooksService)(),
+  );
   const [res1, res2] = await Promise.all([
     service.reserveSeats(flightId, 'Economy', 2),
     service.reserveSeats(flightId, 'Economy', 2),
@@ -318,7 +563,16 @@ test('HTTP routes declare public/role boundaries, ObjectId parsing, CSV headers 
   }
   const headers: any = {};
   const controller = new FlightsController({ bookingsCsv: async () => 'csv body' });
-  const result = await controller.csv(moderator, flightId, {}, { setHeader: (k: string, v: string) => { headers[k] = v; } });
+  const result = await controller.csv(
+    moderator,
+    flightId,
+    {},
+    {
+      setHeader: (k: string, v: string) => {
+        headers[k] = v;
+      },
+    },
+  );
   assert.equal(result, 'csv body');
   assert.match(headers['Content-Type'], /text\/csv/);
   assert.match(headers['Content-Disposition'], /attachment/);
@@ -329,18 +583,24 @@ test('HTTP routes declare public/role boundaries, ObjectId parsing, CSV headers 
   const { FlightHooksService } = require('./flight-hooks.service');
   const hooks = new FlightHooksService();
   class HttpTestModule {}
-  Module({ controllers: [FlightsController, AirlinesController], providers: [{ provide: FlightsService, useValue: {} }] })(HttpTestModule);
+  Module({
+    controllers: [FlightsController, AirlinesController],
+    providers: [{ provide: FlightsService, useValue: {} }],
+  })(HttpTestModule);
   const app = await NestFactory.create(HttpTestModule, { logger: false });
   try {
     const doc = SwaggerModule.createDocument(app, new DocumentBuilder().build());
     assert.ok(doc.paths['/flights/search'].get.responses['200'].content['application/json'].schema);
     assert.ok(doc.paths['/flights/{id}/bookings.csv'].get.responses['200'].content['text/csv']);
     assert.ok(doc.components.schemas.CreateFlightDto);
-    for (const path of Object.values(doc.paths) as any[]) for (const operation of Object.values(path) as any[]) {
-      assert.ok(operation.summary);
-      assert.ok(operation.responses['400']);
-    }
-  } finally { await app.close(); }
+    for (const path of Object.values(doc.paths) as any[])
+      for (const operation of Object.values(path) as any[]) {
+        assert.ok(operation.summary);
+        assert.ok(operation.responses['400']);
+      }
+  } finally {
+    await app.close();
+  }
 });
 
 test('FlightsModule exports its service and hooks, and registers no booking model of its own', () => {
@@ -356,8 +616,20 @@ test('FlightsModule exports its service and hooks, and registers no booking mode
 
 test('bookingCsv enforces the FLT-29 column contract', () => {
   const { bookingCsv } = require('./booking-csv');
-  const csv = bookingCsv([{ id: 'b1', reference: 'R1', passengerNames: ['P1', 'P2'], cabin: 'Business', seats: 2, status: 'cancelled' } as any]);
-  assert.equal(csv, '"reference","passenger names","cabin","seats","status"\r\n"R1","P1, P2","Business","2","cancelled"\r\n');
+  const csv = bookingCsv([
+    {
+      id: 'b1',
+      reference: 'R1',
+      passengerNames: ['P1', 'P2'],
+      cabin: 'Business',
+      seats: 2,
+      status: 'cancelled',
+    } as any,
+  ]);
+  assert.equal(
+    csv,
+    '"reference","passenger names","cabin","seats","status"\r\n"R1","P1, P2","Business","2","cancelled"\r\n',
+  );
 });
 
 test('logo removal is scoped and public airline detail uses shared media', async () => {
@@ -380,8 +652,20 @@ test('Person 2 samples validate against schemas and seed via insert-only upserts
   for (const airline of sampleAirlines) assert.equal(new AirlineModel(airline).validateSync(), undefined);
   assert.ok(sampleFlights.length >= 2);
   const writes: any[] = [];
-  const airlines = { findOneAndUpdate: (filter: any, update: any, options: any) => { writes.push([filter, update, options]); return query({ _id: airlineId }); }, updateOne: () => query({}) };
-  const flights = { updateOne: (filter: any, update: any, options: any) => { writes.push([filter, update, options]); assert.equal(new FlightModel(update.$setOnInsert).validateSync(), undefined); return query({ upsertedCount: 1 }); } };
+  const airlines = {
+    findOneAndUpdate: (filter: any, update: any, options: any) => {
+      writes.push([filter, update, options]);
+      return query({ _id: airlineId });
+    },
+    updateOne: () => query({}),
+  };
+  const flights = {
+    updateOne: (filter: any, update: any, options: any) => {
+      writes.push([filter, update, options]);
+      assert.equal(new FlightModel(update.$setOnInsert).validateSync(), undefined);
+      return query({ upsertedCount: 1 });
+    },
+  };
   await seedFlightSamples(airlines, flights, { ...refs, assertCountryCodes: async () => [] }, 'USD', '2030-11-05');
   assert.equal(writes.length, sampleAirlines.length + sampleFlights.length);
   assert.ok(writes.every((w) => w[1].$setOnInsert && !w[1].$set && w[2].upsert));
@@ -405,7 +689,16 @@ test('HTTP integration test executes global validation and exception filter with
   let statusSet = 0;
   const mockHost: any = {
     switchToHttp: () => ({
-      getResponse: () => ({ status: (s: number) => { statusSet = s; return { json: (body: any) => { payload = body; } }; } }),
+      getResponse: () => ({
+        status: (s: number) => {
+          statusSet = s;
+          return {
+            json: (body: any) => {
+              payload = body;
+            },
+          };
+        },
+      }),
       getRequest: () => ({ method: 'GET', originalUrl: '/api/flights/search' }),
     }),
   };
@@ -418,9 +711,18 @@ test('HTTP integration test executes global validation and exception filter with
 });
 
 test('price filters can select a higher-priced cabin when the cheapest cabin is outside the requested range', async () => {
-  const flight = { ...storedFlight(), cabins: [...storedFlight().cabins, { cabin: 'Business', capacity: 10, price: 300, held: 0, booked: 0 }] };
+  const flight = {
+    ...storedFlight(),
+    cabins: [...storedFlight().cabins, { cabin: 'Business', capacity: 10, price: 300, held: 0, booked: 0 }],
+  };
   const { service } = fixture({ reference: refs, flights: { find: () => query([flight]) } });
-  const result = await service.search({ origin: 'CAI', destination: 'LHR', departureDate: '2030-11-05', minPrice: 200, maxPrice: 400 });
+  const result = await service.search({
+    origin: 'CAI',
+    destination: 'LHR',
+    departureDate: '2030-11-05',
+    minPrice: 200,
+    maxPrice: 400,
+  });
   assert.equal(result.total, 1);
   assert.equal(result.items[0].price, 300);
   assert.equal(result.items[0].outbound.cabins[0].cabin, 'Business');
@@ -428,12 +730,31 @@ test('price filters can select a higher-priced cabin when the cheapest cabin is 
 
 test('reserve expression binds availability to one cabin and uses Mongo expression argument arrays', async () => {
   let filter: any;
-  const { service } = fixture({ flights: { updateOne: (f: any) => { filter = f; return query({ modifiedCount: 1 }); } } });
+  const { service } = fixture({
+    flights: {
+      updateOne: (f: any) => {
+        filter = f;
+        return query({ modifiedCount: 1 });
+      },
+    },
+  });
   await service.reserveSeats(flightId, 'Business', 3);
-  assert.deepEqual(filter.$expr, { $anyElementTrue: [{ $map: { input: '$cabins', as: 'c', in: { $and: [
-    { $eq: ['$$c.cabin', 'Business'] },
-    { $gte: [{ $subtract: ['$$c.capacity', { $add: ['$$c.booked', '$$c.held'] }] }, 3] },
-  ] } } }] });
+  assert.deepEqual(filter.$expr, {
+    $anyElementTrue: [
+      {
+        $map: {
+          input: '$cabins',
+          as: 'c',
+          in: {
+            $and: [
+              { $eq: ['$$c.cabin', 'Business'] },
+              { $gte: [{ $subtract: ['$$c.capacity', { $add: ['$$c.booked', '$$c.held'] }] }, 3] },
+            ],
+          },
+        },
+      },
+    ],
+  });
 });
 
 test('schema enforces unique cabin types, occupied capacity, ordered UTC instants and consistent cancellation tiers', () => {
@@ -442,22 +763,29 @@ test('schema enforces unique cabin types, occupied capacity, ordered UTC instant
   const FlightModel = model('InvariantFlightTest', FlightSchema);
   assert.equal(new FlightModel(storedFlight()).validateSync(), undefined);
   for (const change of [
-    { cabins: [] }, { cabins: [...storedFlight().cabins, ...storedFlight().cabins] },
+    { cabins: [] },
+    { cabins: [...storedFlight().cabins, ...storedFlight().cabins] },
     { cabins: [{ ...storedFlight().cabins[0], held: 9 }] },
     { arrivalAt: new Date('2030-11-05T07:00Z') },
-  ]) assert.ok(new FlightModel({ ...storedFlight(), ...change }).validateSync());
+  ])
+    assert.ok(new FlightModel({ ...storedFlight(), ...change }).validateSync());
 });
 
 test('validation helpers reject malformed cabin values and baggage must be an object', async () => {
   const { validateCabins } = require('./flight-validation');
   for (const cabin of [
-    { cabin: 'bad', capacity: 10, price: 100 }, { cabin: 'Economy', capacity: -1, price: 100 },
-    { cabin: 'Economy', capacity: 1.5, price: 100 }, { cabin: 'Economy', capacity: 10, price: Infinity },
+    { cabin: 'bad', capacity: 10, price: 100 },
+    { cabin: 'Economy', capacity: -1, price: 100 },
+    { cabin: 'Economy', capacity: 1.5, price: 100 },
+    { cabin: 'Economy', capacity: 10, price: Infinity },
     { cabin: 'Economy', capacity: 10, price: -1 },
-  ]) assert.throws(() => validateCabins([cabin]));
+  ])
+    assert.throws(() => validateCabins([cabin]));
   const { CreateFlightDto } = require('./dto/flights.dto');
   const { buildValidationPipe } = require('../../common/pipes/validation');
-  await assert.rejects(buildValidationPipe().transform({ ...input, baggagePolicy: [] }, { type: 'body', metatype: CreateFlightDto }));
+  await assert.rejects(
+    buildValidationPipe().transform({ ...input, baggagePolicy: [] }, { type: 'body', metatype: CreateFlightDto }),
+  );
 });
 
 test('search DTO transforms query numbers and rejects invalid sorts, counts, limits, prices and extra fields', async () => {
@@ -465,25 +793,62 @@ test('search DTO transforms query numbers and rejects invalid sorts, counts, lim
   const { buildValidationPipe } = require('../../common/pipes/validation');
   const pipe = buildValidationPipe();
   const base = { origin: 'CAI', destination: 'LHR', departureDate: '2030-11-05' };
-  const valid = await pipe.transform({ ...base, adults: '2', limit: '5' }, { type: 'query', metatype: FlightSearchDto });
+  const valid = await pipe.transform(
+    { ...base, adults: '2', limit: '5' },
+    { type: 'query', metatype: FlightSearchDto },
+  );
   assert.equal(valid.adults, 2);
   assert.equal(valid.limit, 5);
   assert.equal(valid.sort, 'price');
-  for (const change of [{ adults: '0' }, { children: '1.5' }, { infants: '-1' }, { sort: 'random' }, { minPrice: '-1' }, { maxPrice: 'NaN' }, { cabin: 'cargo' }, { limit: '101' }, { extra: 'x' }]) {
+  for (const change of [
+    { adults: '0' },
+    { children: '1.5' },
+    { infants: '-1' },
+    { sort: 'random' },
+    { minPrice: '-1' },
+    { maxPrice: 'NaN' },
+    { cabin: 'cargo' },
+    { limit: '101' },
+    { extra: 'x' },
+  ]) {
     await assert.rejects(pipe.transform({ ...base, ...change }, { type: 'query', metatype: FlightSearchDto }));
   }
   await assert.rejects(pipe.transform({ status: 'paid' }, { type: 'query', metatype: FlightBookingQueryDto }));
 });
 
 test('all search sorts are deterministic, with inclusive price bounds and empty-page metadata', async () => {
-  const a = { ...storedFlight(), _id: 'a', departureAt: new Date('2030-11-05T10:00Z'), arrivalAt: new Date('2030-11-05T12:00Z') };
-  const b = { ...storedFlight(), _id: 'b', departureAt: new Date('2030-11-05T08:00Z'), arrivalAt: new Date('2030-11-05T11:00Z'), cabins: [{ ...a.cabins[0], price: 200 }] };
-  const c = { ...a, _id: 'c', departureAt: new Date('2030-11-05T12:00Z'), arrivalAt: new Date('2030-11-05T13:00Z'), cabins: [{ ...a.cabins[0], price: 300 }] };
+  const a = {
+    ...storedFlight(),
+    _id: 'a',
+    departureAt: new Date('2030-11-05T10:00Z'),
+    arrivalAt: new Date('2030-11-05T12:00Z'),
+  };
+  const b = {
+    ...storedFlight(),
+    _id: 'b',
+    departureAt: new Date('2030-11-05T08:00Z'),
+    arrivalAt: new Date('2030-11-05T11:00Z'),
+    cabins: [{ ...a.cabins[0], price: 200 }],
+  };
+  const c = {
+    ...a,
+    _id: 'c',
+    departureAt: new Date('2030-11-05T12:00Z'),
+    arrivalAt: new Date('2030-11-05T13:00Z'),
+    cabins: [{ ...a.cabins[0], price: 300 }],
+  };
   const { service } = fixture({ reference: refs, flights: { find: () => query([c, b, a]) } });
   const base = { origin: 'CAI', destination: 'LHR', departureDate: '2030-11-05' };
-  for (const [sort, expected] of [['price', ['a', 'b', 'c']], ['duration', ['c', 'a', 'b']], ['departure', ['b', 'a', 'c']]]) {
+  for (const [sort, expected] of [
+    ['price', ['a', 'b', 'c']],
+    ['duration', ['c', 'a', 'b']],
+    ['departure', ['b', 'a', 'c']],
+  ]) {
     const result = await service.search({ ...base, sort });
-    assert.deepEqual(result.items.map((i: any) => i.outbound.id), expected);
+    assert.deepEqual(
+      result.items.map((i: any) => i.outbound.id),
+      expected,
+    );
   }
   const exact = await service.search({ ...base, minPrice: 200, maxPrice: 200 });
   assert.equal(exact.total, 1);
@@ -495,15 +860,24 @@ test('all search sorts are deterministic, with inclusive price bounds and empty-
 
 test('refund policy validates duplicate thresholds, does not mutate, and handles zero-day boundary', () => {
   const { computeRefundPercent } = require('./flight-policy');
-  const tiers = Object.freeze([Object.freeze({ minDays: 0, refundPercent: 20 }), Object.freeze({ minDays: 7, refundPercent: 100 })]);
+  const tiers = Object.freeze([
+    Object.freeze({ minDays: 0, refundPercent: 20 }),
+    Object.freeze({ minDays: 7, refundPercent: 100 }),
+  ]);
   assert.equal(computeRefundPercent(tiers, 0), 20);
   assert.equal(computeRefundPercent(tiers, -0.01), 0);
   assert.equal(computeRefundPercent(tiers, 7), 100);
   for (const invalid of [
-    [{ minDays: 0, refundPercent: 10 }, { minDays: 0, refundPercent: 20 }],
-    [{ minDays: -1, refundPercent: 20 }], [{ minDays: 0.5, refundPercent: 20 }],
-    [{ minDays: 0, refundPercent: NaN }], [{ minDays: 0, refundPercent: -1 }],
-  ]) assert.throws(() => computeRefundPercent(invalid, 10));
+    [
+      { minDays: 0, refundPercent: 10 },
+      { minDays: 0, refundPercent: 20 },
+    ],
+    [{ minDays: -1, refundPercent: 20 }],
+    [{ minDays: 0.5, refundPercent: 20 }],
+    [{ minDays: 0, refundPercent: NaN }],
+    [{ minDays: 0, refundPercent: -1 }],
+  ])
+    assert.throws(() => computeRefundPercent(invalid, 10));
 });
 
 test('details resolve effective lifecycle at exact time boundaries and never offer cancelled seats', () => {
@@ -518,11 +892,15 @@ test('details resolve effective lifecycle at exact time boundaries and never off
 });
 
 test('schedule edits hand off to bookings (which notify Confirmed passengers) while fare-only edits do not', async () => {
-  const { service, calls } = fixture({ reference: refs,
+  const { service, calls } = fixture({
+    reference: refs,
     flights: { findById: () => query(storedFlight()), findOneAndUpdate: () => query(storedFlight()) },
   });
   await service.updateFlight(moderator, flightId, { departureLocal: '2030-11-05T11:00' });
-  assert.deepEqual(calls.filter((c) => c[0] === 'schedule'), [['schedule', flightId]]);
+  assert.deepEqual(
+    calls.filter((c) => c[0] === 'schedule'),
+    [['schedule', flightId]],
+  );
   calls.length = 0;
   await service.updateFlight(moderator, flightId, { cabins: [{ cabin: 'Economy', capacity: 10, price: 120 }] });
   assert.equal(calls.filter((c) => c[0] === 'schedule').length, 0);
@@ -531,7 +909,15 @@ test('schedule edits hand off to bookings (which notify Confirmed passengers) wh
 // ---- Rework: airline policies, Premium Economy, guarded edits, active filter, duplicates, FLT-06 handoff ----
 
 function activeAirline() {
-  return { _id: airlineId, name: 'Test Air', code: 'TA', countryCode: 'EG', status: 'active', baggagePolicy: { extraBagPrice: 25, maxExtraBagsPerPassenger: 2, cabins: [] }, cancellationTiers: [{ minDays: 7, refundPercent: 100 }] };
+  return {
+    _id: airlineId,
+    name: 'Test Air',
+    code: 'TA',
+    countryCode: 'EG',
+    status: 'active',
+    baggagePolicy: { extraBagPrice: 25, maxExtraBagsPerPassenger: 2, cabins: [] },
+    cancellationTiers: [{ minDays: 7, refundPercent: 100 }],
+  };
 }
 
 test('cabin set includes Premium Economy; capacity and price must be strictly positive; classes unique', () => {
@@ -539,7 +925,14 @@ test('cabin set includes Premium Economy; capacity and price must be strictly po
   const { CabinType } = require('./schemas/flight.schema');
   assert.deepEqual(Object.values(CabinType), ['Economy', 'Premium Economy', 'Business', 'First']);
   validateCabins(Object.values(CabinType).map((cabin) => ({ cabin, capacity: 1, price: 0.01 })));
-  for (const bad of [{ capacity: 0 }, { capacity: -1 }, { capacity: 1.5 }, { price: 0 }, { price: -5 }, { cabin: 'economy' }]) {
+  for (const bad of [
+    { capacity: 0 },
+    { capacity: -1 },
+    { capacity: 1.5 },
+    { price: 0 },
+    { price: -5 },
+    { cabin: 'economy' },
+  ]) {
     assert.throws(() => validateCabins([{ cabin: 'Premium Economy', capacity: 5, price: 50, ...bad }]));
   }
   assert.throws(() => validateCabins([input.cabins[0], input.cabins[0]]));
@@ -547,26 +940,67 @@ test('cabin set includes Premium Economy; capacity and price must be strictly po
 
 test('airline baggage policy rules: bag price > 0, whole counts >= 0, per-cabin kg > 0', () => {
   const { validateBaggagePolicy } = require('./flight-policy');
-  const ok = { extraBagPrice: 20, maxExtraBagsPerPassenger: 0, cabins: [{ cabin: 'Economy', freeBags: 0, maxWeightKg: 23 }] };
+  const ok = {
+    extraBagPrice: 20,
+    maxExtraBagsPerPassenger: 0,
+    cabins: [{ cabin: 'Economy', freeBags: 0, maxWeightKg: 23 }],
+  };
   validateBaggagePolicy(ok);
-  for (const change of [{ extraBagPrice: 0 }, { extraBagPrice: -1 }, { maxExtraBagsPerPassenger: -1 }, { maxExtraBagsPerPassenger: 1.5 },
-    { cabins: [{ ...ok.cabins[0], freeBags: -1 }] }, { cabins: [{ ...ok.cabins[0], freeBags: 0.5 }] }, { cabins: [{ ...ok.cabins[0], maxWeightKg: 0 }] },
-    { cabins: [ok.cabins[0], ok.cabins[0]] }]) assert.throws(() => validateBaggagePolicy({ ...ok, ...change }));
+  for (const change of [
+    { extraBagPrice: 0 },
+    { extraBagPrice: -1 },
+    { maxExtraBagsPerPassenger: -1 },
+    { maxExtraBagsPerPassenger: 1.5 },
+    { cabins: [{ ...ok.cabins[0], freeBags: -1 }] },
+    { cabins: [{ ...ok.cabins[0], freeBags: 0.5 }] },
+    { cabins: [{ ...ok.cabins[0], maxWeightKg: 0 }] },
+    { cabins: [ok.cabins[0], ok.cabins[0]] },
+  ])
+    assert.throws(() => validateBaggagePolicy({ ...ok, ...change }));
 });
 
 test('PUT policy services are moderator-scoped, validated, and persist on the airline', async () => {
   const calls: any[] = [];
-  const airlines = { findById: () => query(activeAirline()), findByIdAndUpdate: (...a: any[]) => { calls.push(a); return query({ _id: airlineId }); } };
+  const airlines = {
+    findById: () => query(activeAirline()),
+    findByIdAndUpdate: (...a: any[]) => {
+      calls.push(a);
+      return query({ _id: airlineId });
+    },
+  };
   const { service } = fixture({ airlines });
-  const policy = { extraBagPrice: 20, maxExtraBagsPerPassenger: 2, cabins: [{ cabin: 'Premium Economy', freeBags: 1, maxWeightKg: 25 }] };
+  const policy = {
+    extraBagPrice: 20,
+    maxExtraBagsPerPassenger: 2,
+    cabins: [{ cabin: 'Premium Economy', freeBags: 1, maxWeightKg: 25 }],
+  };
   await assert.rejects(service.setBaggagePolicy(moderator, flightId, policy), /assigned airline/);
   await assert.rejects(service.setBaggagePolicy(moderator, airlineId, { ...policy, extraBagPrice: 0 }), /baggage/);
   await service.setBaggagePolicy(moderator, airlineId, policy);
   assert.deepEqual(calls[0][1].$set.baggagePolicy, policy);
-  await assert.rejects(service.setCancellationPolicy(moderator, airlineId, { tiers: [{ minDays: 1, refundPercent: 50 }, { minDays: 1, refundPercent: 60 }] }), /tiers/);
-  await assert.rejects(service.setCancellationPolicy(moderator, airlineId, { tiers: [{ minDays: 1, refundPercent: 101 }] }), /tiers/);
-  await service.setCancellationPolicy(moderator, airlineId, { tiers: [{ minDays: 7, refundPercent: 100 }, { minDays: 0, refundPercent: 10 }] });
-  assert.deepEqual(calls[1][1].$set.cancellationTiers.map((t: any) => t.minDays), [0, 7]);
+  await assert.rejects(
+    service.setCancellationPolicy(moderator, airlineId, {
+      tiers: [
+        { minDays: 1, refundPercent: 50 },
+        { minDays: 1, refundPercent: 60 },
+      ],
+    }),
+    /tiers/,
+  );
+  await assert.rejects(
+    service.setCancellationPolicy(moderator, airlineId, { tiers: [{ minDays: 1, refundPercent: 101 }] }),
+    /tiers/,
+  );
+  await service.setCancellationPolicy(moderator, airlineId, {
+    tiers: [
+      { minDays: 7, refundPercent: 100 },
+      { minDays: 0, refundPercent: 10 },
+    ],
+  });
+  assert.deepEqual(
+    calls[1][1].$set.cancellationTiers.map((t: any) => t.minDays),
+    [0, 7],
+  );
 });
 
 test('Airline schema defaults to active and validates embedded policies; new routes require the moderator role', () => {
@@ -577,61 +1011,128 @@ test('Airline schema defaults to active and validates embedded policies; new rou
   assert.equal(a.status, 'active');
   assert.equal(a.validateSync(), undefined);
   assert.ok(new M({ name: 'X Air', code: 'XA', countryCode: 'EG', status: 'banned' }).validateSync());
-  assert.ok(new M({ name: 'X Air', code: 'XA', countryCode: 'EG', baggagePolicy: { extraBagPrice: 0, maxExtraBagsPerPassenger: 1, cabins: [] } }).validateSync());
+  assert.ok(
+    new M({
+      name: 'X Air',
+      code: 'XA',
+      countryCode: 'EG',
+      baggagePolicy: { extraBagPrice: 0, maxExtraBagsPerPassenger: 1, cabins: [] },
+    }).validateSync(),
+  );
   const { AirlinesController, FlightsController } = require('./flights.controller');
   const { ROLES_KEY } = require('../../common/decorators');
-  for (const m of ['baggagePolicy', 'cancellationPolicy']) assert.deepEqual(Reflect.getMetadata(ROLES_KEY, AirlinesController.prototype[m]), ['airline_moderator']);
-  for (const m of ['addCabin', 'updateCabin']) assert.deepEqual(Reflect.getMetadata(ROLES_KEY, FlightsController.prototype[m]), ['airline_moderator']);
+  for (const m of ['baggagePolicy', 'cancellationPolicy'])
+    assert.deepEqual(Reflect.getMetadata(ROLES_KEY, AirlinesController.prototype[m]), ['airline_moderator']);
+  for (const m of ['addCabin', 'updateCabin'])
+    assert.deepEqual(Reflect.getMetadata(ROLES_KEY, FlightsController.prototype[m]), ['airline_moderator']);
 });
 
 test('search lists only Scheduled flights of ACTIVE airlines and details expose airline-level policies', async () => {
   const filters: any[] = [];
   const airlinesFind: any[] = [];
-  const flights = [{ ...storedFlight(), _id: 'ok' }, { ...storedFlight(), _id: 'hidden', airlineId: flightId }];
-  const { service } = fixture({ reference: refs,
-    airlines: { find: (f: any) => { airlinesFind.push(f); return query([activeAirline()]); } },
-    flights: { find: (f: any) => { filters.push(f); return query(flights); } } });
+  const flights = [
+    { ...storedFlight(), _id: 'ok' },
+    { ...storedFlight(), _id: 'hidden', airlineId: flightId },
+  ];
+  const { service } = fixture({
+    reference: refs,
+    airlines: {
+      find: (f: any) => {
+        airlinesFind.push(f);
+        return query([activeAirline()]);
+      },
+    },
+    flights: {
+      find: (f: any) => {
+        filters.push(f);
+        return query(flights);
+      },
+    },
+  });
   const result = await service.search({ origin: 'CAI', destination: 'LHR', departureDate: '2030-11-05' });
   assert.deepEqual(airlinesFind[0], { status: 'active' });
   assert.equal(filters[0].status, 'Scheduled');
   assert.equal(filters[0].airlineId.$in.length, 1);
-  assert.deepEqual(result.items.map((i: any) => i.outbound.id), ['ok']);
+  assert.deepEqual(
+    result.items.map((i: any) => i.outbound.id),
+    ['ok'],
+  );
   assert.equal(result.items[0].outbound.cancellationTiers[0].refundPercent, 100);
   assert.equal(result.items[0].outbound.baggagePolicy.extraBagPrice, 25);
 });
 
 test('no active airline means empty search results', async () => {
-  const { service } = fixture({ reference: refs, airlines: { find: () => query([]) }, flights: { find: () => query([storedFlight()]) } });
+  const { service } = fixture({
+    reference: refs,
+    airlines: { find: () => query([]) },
+    flights: { find: () => query([storedFlight()]) },
+  });
   const result = await service.search({ origin: 'CAI', destination: 'LHR', departureDate: '2030-11-05' });
   assert.equal(result.total, 0);
 });
 
 test('duplicate flight number on the same departure day is rejected at create; other days pass', async () => {
   const seen: any[] = [];
-  const dup = fixture({ reference: refs, flights: { create: async (v: any) => v, exists: (f: any) => { seen.push(f); return query({ _id: 'x' }); } } }).service;
+  const dup = fixture({
+    reference: refs,
+    flights: {
+      create: async (v: any) => v,
+      exists: (f: any) => {
+        seen.push(f);
+        return query({ _id: 'x' });
+      },
+    },
+  }).service;
   await assert.rejects(dup.createFlight(moderator, input), /Duplicate/);
   assert.deepEqual(seen[0], { airlineId, flightNumber: 'TA101', departureDay: '2030-11-05' });
-  const keyed = fixture({ reference: refs, flights: { create: async () => { throw Object.assign(new Error('E11000'), { code: 11000 }); } } }).service;
+  const keyed = fixture({
+    reference: refs,
+    flights: {
+      create: async () => {
+        throw Object.assign(new Error('E11000'), { code: 11000 });
+      },
+    },
+  }).service;
   await assert.rejects(keyed.createFlight(moderator, input), /Duplicate/);
   const ok = fixture({ reference: refs, flights: { create: async (v: any) => v } }).service;
-  const created = await ok.createFlight(moderator, { ...input, departureLocal: '2030-11-06T10:00', arrivalLocal: '2030-11-06T13:00' });
+  const created = await ok.createFlight(moderator, {
+    ...input,
+    departureLocal: '2030-11-06T10:00',
+    arrivalLocal: '2030-11-06T13:00',
+  });
   assert.equal(created.departureDay, '2030-11-06');
   const { FlightSchema } = require('./schemas/flight.schema');
-  assert.ok(FlightSchema.indexes().some(([f, o]: any) => o.unique && f.departureDay === 1 && f.flightNumber === 1 && f.airlineId === 1));
+  assert.ok(
+    FlightSchema.indexes().some(
+      ([f, o]: any) => o.unique && f.departureDay === 1 && f.flightNumber === 1 && f.airlineId === 1,
+    ),
+  );
 });
 
 test('airports are locked once any booking exists; times and cabins stay editable; immutable fields rejected by DTO', async () => {
   const stored = storedFlight();
   const counted: any[] = [];
   const dxb = { _id: 'dxb', iataCode: 'DXB', timezone: 'Asia/Dubai' };
-  const make = (count: number) => fixture({ reference: { ...refs, resolveAirport: async (v: string) => v === 'DXB' ? dxb : refs.resolveAirport(v) },
-    flights: { findById: () => query(stored), findOneAndUpdate: () => query(stored) },
-    bridge: { countForFlight: async (id: string) => { counted.push(id); return count; } } });
+  const make = (count: number) =>
+    fixture({
+      reference: { ...refs, resolveAirport: async (v: string) => (v === 'DXB' ? dxb : refs.resolveAirport(v)) },
+      flights: { findById: () => query(stored), findOneAndUpdate: () => query(stored) },
+      bridge: {
+        countForFlight: async (id: string) => {
+          counted.push(id);
+          return count;
+        },
+      },
+    });
   await assert.rejects(make(1).service.updateFlight(moderator, flightId, { destination: 'DXB' }), /bookings/);
   await assert.rejects(make(1).service.updateFlight(moderator, flightId, { origin: 'DXB' }), /bookings/);
   assert.equal(counted[0], flightId);
   await make(0).service.updateFlight(moderator, flightId, { destination: 'DXB' });
-  await make(3).service.updateFlight(moderator, flightId, { departureLocal: '2030-11-05T11:00', arrivalLocal: '2030-11-05T14:00', cabins: [{ cabin: 'Economy', price: 90 }] });
+  await make(3).service.updateFlight(moderator, flightId, {
+    departureLocal: '2030-11-05T11:00',
+    arrivalLocal: '2030-11-05T14:00',
+    cabins: [{ cabin: 'Economy', price: 90 }],
+  });
   const { UpdateFlightDto } = require('./dto/flights.dto');
   const { buildValidationPipe } = require('../../common/pipes/validation');
   for (const forbidden of [{ flightNumber: 'TA999' }, { airlineId }, { currency: 'EUR' }, { status: 'Cancelled' }]) {
@@ -641,9 +1142,20 @@ test('airports are locked once any booking exists; times and cabins stay editabl
 
 test('POST/PATCH cabins: unique class, positive values, capacity floor, 404 for unknown cabin', async () => {
   const cabinId = '507f1f77bcf86cd799439099';
-  const stored = { ...storedFlight(), cabins: [{ _id: cabinId, cabin: 'Economy', capacity: 10, price: 100, held: 2, booked: 3 }] };
+  const stored = {
+    ...storedFlight(),
+    cabins: [{ _id: cabinId, cabin: 'Economy', capacity: 10, price: 100, held: 2, booked: 3 }],
+  };
   const calls: any[] = [];
-  const { service } = fixture({ flights: { findById: () => query(stored), findOneAndUpdate: (...a: any[]) => { calls.push(a); return query(stored); } } });
+  const { service } = fixture({
+    flights: {
+      findById: () => query(stored),
+      findOneAndUpdate: (...a: any[]) => {
+        calls.push(a);
+        return query(stored);
+      },
+    },
+  });
   await service.addCabin(moderator, flightId, { cabin: 'Premium Economy', capacity: 20, price: 150 });
   assert.equal(calls[0][1].$push.cabins.held, 0);
   await assert.rejects(service.addCabin(moderator, flightId, { cabin: 'Economy', capacity: 5, price: 10 }), /already/);
@@ -655,15 +1167,34 @@ test('POST/PATCH cabins: unique class, positive values, capacity floor, 404 for 
   await assert.rejects(service.updateCabin(moderator, flightId, cabinId, { capacity: 4 }), /booked or held/);
   await assert.rejects(service.updateCabin(moderator, flightId, cabinId, { price: 0 }));
   await assert.rejects(service.updateCabin(moderator, flightId, '507f1f77bcf86cd799439098', { price: 5 }), /not found/);
-  await assert.rejects(service.addCabin({ ...moderator, moderatorAssignment: { providerType: 'airline', providerId: flightId } }, flightId, { cabin: 'First', capacity: 1, price: 1 }), /assigned airline/);
+  await assert.rejects(
+    service.addCabin(
+      { ...moderator, moderatorAssignment: { providerType: 'airline', providerId: flightId } },
+      flightId,
+      { cabin: 'First', capacity: 1, price: 1 },
+    ),
+    /assigned airline/,
+  );
 });
 
 function cancelFixture(results: any[] = [{ cancelled: 1, expired: 1, failed: [] }]) {
   const stored = storedFlight();
-  const mutations: any[] = [], bridgeCalls: string[] = [];
+  const mutations: any[] = [],
+    bridgeCalls: string[] = [];
   const ctx = fixture({
-    flights: { findById: () => query(stored), findOneAndUpdate: (...a: any[]) => { mutations.push(a); return query({ ...stored, status: 'Cancelled' }); } },
-    bridge: { onFlightCancelled: async (id: string) => { bridgeCalls.push(id); return results[Math.min(bridgeCalls.length, results.length) - 1]; } },
+    flights: {
+      findById: () => query(stored),
+      findOneAndUpdate: (...a: any[]) => {
+        mutations.push(a);
+        return query({ ...stored, status: 'Cancelled' });
+      },
+    },
+    bridge: {
+      onFlightCancelled: async (id: string) => {
+        bridgeCalls.push(id);
+        return results[Math.min(bridgeCalls.length, results.length) - 1];
+      },
+    },
   });
   return { ...ctx, mutations, bridgeCalls, stored };
 }
@@ -672,7 +1203,11 @@ test('FLT-06: cancel marks the flight Cancelled first, then hands every booking 
   const { service, mutations, bridgeCalls } = cancelFixture();
   const result = await service.cancelFlight(moderator, flightId);
   assert.equal(mutations.length, 1);
-  assert.deepEqual(mutations[0][1].$set, { status: 'Cancelled' }, 'held seats are released by bookings, not zeroed here');
+  assert.deepEqual(
+    mutations[0][1].$set,
+    { status: 'Cancelled' },
+    'held seats are released by bookings, not zeroed here',
+  );
   assert.deepEqual(bridgeCalls, [flightId]);
   assert.deepEqual({ c: result.cancelledBookings, e: result.expiredBookings }, { c: 1, e: 1 });
 });
@@ -691,7 +1226,13 @@ test('FLT-06: failed refunds surface 503; repeating the cancel on a Cancelled fl
 });
 
 test('FLT-06: without a bookings bridge the cancel fails loudly instead of skipping refunds', async () => {
-  const { service } = fixture({ noBridge: true, flights: { findById: () => query(storedFlight()), findOneAndUpdate: () => query({ ...storedFlight(), status: 'Cancelled' }) } });
+  const { service } = fixture({
+    noBridge: true,
+    flights: {
+      findById: () => query(storedFlight()),
+      findOneAndUpdate: () => query({ ...storedFlight(), status: 'Cancelled' }),
+    },
+  });
   await assert.rejects(service.cancelFlight(moderator, flightId), /not available/);
 });
 
@@ -699,21 +1240,58 @@ test('status casing: flight and booking statuses use requirement values', () => 
   const { FlightStatus } = require('./schemas/flight.schema');
   const { BookingStatus } = require('../../common/constants/enums');
   assert.deepEqual(Object.values(FlightStatus), ['Scheduled', 'Departed', 'Cancelled']);
-  assert.deepEqual(Object.values(BookingStatus).sort(), ['cancelled', 'completed', 'confirmed', 'expired', 'pending_payment']);
+  assert.deepEqual(Object.values(BookingStatus).sort(), [
+    'cancelled',
+    'completed',
+    'confirmed',
+    'expired',
+    'pending_payment',
+  ]);
 });
 
 test('FLT-03: duplicate day is the origin-local day, not UTC', async () => {
   const seen: any[] = [];
-  const { service } = fixture({ reference: { ...refs, resolveAirport: async (c: string) => ({ _id: c, iataCode: c, timezone: c === 'AAA' ? 'Pacific/Auckland' : 'UTC' }) },
-    flights: { exists: (f: any) => { seen.push(f); return query(null); }, create: async (d: any) => d } });
+  const { service } = fixture({
+    reference: {
+      ...refs,
+      resolveAirport: async (c: string) => ({
+        _id: c,
+        iataCode: c,
+        timezone: c === 'AAA' ? 'Pacific/Auckland' : 'UTC',
+      }),
+    },
+    flights: {
+      exists: (f: any) => {
+        seen.push(f);
+        return query(null);
+      },
+      create: async (d: any) => d,
+    },
+  });
   // 2030-11-05 23:00 NZDT = 2030-11-05T10:00Z; 2030-11-06 02:00 NZDT = 2030-11-05T13:00Z (still UTC day 05, local day 06)
-  await service.createFlight(moderator, { airlineId, flightNumber: 'TA9', origin: 'AAA', destination: 'BBB', departureLocal: '2030-11-06T02:00', arrivalLocal: '2030-11-06T09:00', currency: 'USD', cabins: [{ cabin: 'Economy', capacity: 5, price: 10 }] });
+  await service.createFlight(moderator, {
+    airlineId,
+    flightNumber: 'TA9',
+    origin: 'AAA',
+    destination: 'BBB',
+    departureLocal: '2030-11-06T02:00',
+    arrivalLocal: '2030-11-06T09:00',
+    currency: 'USD',
+    cabins: [{ cabin: 'Economy', capacity: 5, price: 10 }],
+  });
   assert.equal(seen[0].departureDay, '2030-11-06');
 });
 
 test('FLT-26: releaseBookedSeats decrements booked atomically and rejects bad input', async () => {
   const updates: any[] = [];
-  const { service } = fixture({ flights: { updateOne: (...a: any[]) => { updates.push(a); return query({ modifiedCount: 1 }); } } });
+  const { service } = fixture({
+    flights: {
+      updateOne: (...a: any[]) => {
+        updates.push(a);
+        return query({ modifiedCount: 1 });
+      },
+    },
+  });
   assert.equal(await service.releaseBookedSeats(flightId, 'Economy', 2), true);
   assert.deepEqual(updates[0][1], { $inc: { 'cabins.$[c].booked': -2 } });
   assert.deepEqual(updates[0][0].cabins, { $elemMatch: { cabin: 'Economy', booked: { $gte: 2 } } });
@@ -722,29 +1300,68 @@ test('FLT-26: releaseBookedSeats decrements booked atomically and rejects bad in
 
 test('FLT-12: infants pay 10% and seated passengers pay 100% in search totalPrice', async () => {
   const { service } = fixture({ reference: refs, flights: { find: () => query([storedFlight()]) } });
-  const r = await service.search({ origin: 'CAI', destination: 'LHR', departureDate: '2030-11-05', adults: 2, children: 1, infants: 2 });
+  const r = await service.search({
+    origin: 'CAI',
+    destination: 'LHR',
+    departureDate: '2030-11-05',
+    adults: 2,
+    children: 1,
+    infants: 2,
+  });
   const p = r.items[0].price;
   assert.equal(r.items[0].totalPrice, p * 3 + p * 2 * 0.1);
 });
 
 test('legacy migration normalizes enums, cabin ids and departureDay, keeps inventory, is idempotent and supports dry-run', async () => {
   const { flightPatch, airlinePatch, migrateLegacyFlights } = require('./seed/flights.migrate');
-  const legacy = () => ({ _id: 'f1', status: 'scheduled', departureAt: new Date('2030-11-05T22:30:00Z'), originTimezone: 'Africa/Cairo', departureDay: '2030-11-05',
-    cabins: [{ cabin: 'premium_economy', capacity: 10, price: 5, held: 2, booked: 3 }, { cabin: 'economy', capacity: 5, price: 1 }] });
+  const legacy = () => ({
+    _id: 'f1',
+    status: 'scheduled',
+    departureAt: new Date('2030-11-05T22:30:00Z'),
+    originTimezone: 'Africa/Cairo',
+    departureDay: '2030-11-05',
+    cabins: [
+      { cabin: 'premium_economy', capacity: 10, price: 5, held: 2, booked: 3 },
+      { cabin: 'economy', capacity: 5, price: 1 },
+    ],
+  });
   const store = { f: [legacy()] as any[], a: [{ _id: 'a1', status: 'Active' }] as any[] };
-  const col = (rows: any[]) => ({ collection: {
-    find: () => (async function* () { yield* rows; })(),
-    updateOne: async (f: any, u: any) => { const d = rows.find((r) => r._id === f._id); Object.assign(d, u.$set); return { modifiedCount: 1 }; } } });
+  const col = (rows: any[]) => ({
+    collection: {
+      find: () =>
+        (async function* () {
+          yield* rows;
+        })(),
+      updateOne: async (f: any, u: any) => {
+        const d = rows.find((r) => r._id === f._id);
+        Object.assign(d, u.$set);
+        return { modifiedCount: 1 };
+      },
+    },
+  });
   const dry = await migrateLegacyFlights(col(store.a), col(store.f), true);
-  assert.equal(dry.flightsUpdated, 1); assert.equal(store.f[0].status, 'scheduled');
+  assert.equal(dry.flightsUpdated, 1);
+  assert.equal(store.f[0].status, 'scheduled');
   const real = await migrateLegacyFlights(col(store.a), col(store.f));
-  assert.deepEqual([real.flightsUpdated, real.airlinesUpdated, real.conflicts.length, real.problems.length], [1, 1, 0, 0]);
+  assert.deepEqual(
+    [real.flightsUpdated, real.airlinesUpdated, real.conflicts.length, real.problems.length],
+    [1, 1, 0, 0],
+  );
   const f = store.f[0];
-  assert.equal(f.status, 'Scheduled'); assert.equal(f.departureDay, '2030-11-06');
-  assert.deepEqual(f.cabins.map((c: any) => [c.cabin, c.held, c.booked]), [['Premium Economy', 2, 3], ['Economy', 0, 0]]);
+  assert.equal(f.status, 'Scheduled');
+  assert.equal(f.departureDay, '2030-11-06');
+  assert.deepEqual(
+    f.cabins.map((c: any) => [c.cabin, c.held, c.booked]),
+    [
+      ['Premium Economy', 2, 3],
+      ['Economy', 0, 0],
+    ],
+  );
   assert.ok(f.cabins.every((c: any) => c._id));
-  assert.equal(store.a[0].status, 'active'); assert.ok(store.a[0].baggagePolicy);
-  assert.equal(flightPatch(f).$set, null); assert.equal(airlinePatch(store.a[0]).$set, null);
+  assert.equal(store.a[0].status, 'active');
+  assert.ok(store.a[0].baggagePolicy);
+  assert.equal(flightPatch(f).$set, null);
+  assert.equal(airlinePatch(store.a[0]).$set, null);
   assert.ok(flightPatch({ ...legacy(), status: 'weird' }).problems.length);
 });
 
@@ -752,28 +1369,71 @@ test('legacy migration converts string airlineId to ObjectId, keeps inventory, i
   const { Types } = require('mongoose');
   const { migrateLegacyFlights, runFlightSeed } = require('./seed/flights.migrate');
   const aid = new Types.ObjectId();
-  const mk = (airlineId: any) => ({ _id: new Types.ObjectId(), airlineId, status: 'Scheduled', departureAt: new Date('2030-11-05T10:00:00Z'), originTimezone: 'Africa/Cairo', departureDay: '2030-11-05',
-    note: 'keep', cabins: [{ _id: new Types.ObjectId(), cabin: 'Economy', capacity: 5, price: 1, held: 2, booked: 3 }] });
-  const col = (rows: any[]) => ({ collection: { find: () => (async function* () { yield* rows; })(),
-    updateOne: async (f: any, u: any) => { const d = rows.find((r) => r._id === f._id); Object.assign(d, u.$set); return { modifiedCount: 1 }; } } });
+  const mk = (airlineId: any) => ({
+    _id: new Types.ObjectId(),
+    airlineId,
+    status: 'Scheduled',
+    departureAt: new Date('2030-11-05T10:00:00Z'),
+    originTimezone: 'Africa/Cairo',
+    departureDay: '2030-11-05',
+    note: 'keep',
+    cabins: [{ _id: new Types.ObjectId(), cabin: 'Economy', capacity: 5, price: 1, held: 2, booked: 3 }],
+  });
+  const col = (rows: any[]) => ({
+    collection: {
+      find: () =>
+        (async function* () {
+          yield* rows;
+        })(),
+      updateOne: async (f: any, u: any) => {
+        const d = rows.find((r) => r._id === f._id);
+        Object.assign(d, u.$set);
+        return { modifiedCount: 1 };
+      },
+    },
+  });
   const airlines = [{ _id: aid, status: 'active', baggagePolicy: {}, cancellationTiers: [] }];
   const rows = [mk(aid.toHexString())];
   const cabins = JSON.stringify(rows[0].cabins);
   const dry = await migrateLegacyFlights(col(airlines), col(rows), true);
-  assert.equal(dry.flightsUpdated, 1); assert.equal(typeof rows[0].airlineId, 'string');
+  assert.equal(dry.flightsUpdated, 1);
+  assert.equal(typeof rows[0].airlineId, 'string');
   const real = await migrateLegacyFlights(col(airlines), col(rows));
   assert.deepEqual([real.flightsUpdated, real.conflicts.length, real.problems.length], [1, 0, 0]);
   assert.ok(rows[0].airlineId instanceof Types.ObjectId && rows[0].airlineId.equals(aid));
-  assert.equal(JSON.stringify(rows[0].cabins), cabins); assert.equal(rows[0].note, 'keep'); assert.equal(rows[0].status, 'Scheduled');
+  assert.equal(JSON.stringify(rows[0].cabins), cabins);
+  assert.equal(rows[0].note, 'keep');
+  assert.equal(rows[0].status, 'Scheduled');
   const again = await migrateLegacyFlights(col(airlines), col(rows));
   assert.deepEqual([again.flightsUpdated, again.conflicts.length], [0, 0]);
   for (const bad of ['not-an-id', new Types.ObjectId().toHexString()]) {
     const r = [mk(bad)];
     const rep = await migrateLegacyFlights(col(airlines), col(r));
-    assert.equal(rep.conflicts.length, 1); assert.equal(r[0].airlineId, bad); assert.equal(r[0].cabins[0].booked, 3);
+    assert.equal(rep.conflicts.length, 1);
+    assert.equal(r[0].airlineId, bad);
+    assert.equal(r[0].cabins[0].booked, 3);
     const ev: string[] = [];
-    const model = (rows2: any[]) => ({ ...col(rows2), createCollection: async () => { ev.push('ddl'); }, createIndexes: async () => { ev.push('ddl'); } });
-    await assert.rejects(runFlightSeed(model(airlines), model(r), async () => { ev.push('seed'); }, false, () => undefined), /aborted/);
+    const model = (rows2: any[]) => ({
+      ...col(rows2),
+      createCollection: async () => {
+        ev.push('ddl');
+      },
+      createIndexes: async () => {
+        ev.push('ddl');
+      },
+    });
+    await assert.rejects(
+      runFlightSeed(
+        model(airlines),
+        model(r),
+        async () => {
+          ev.push('seed');
+        },
+        false,
+        () => undefined,
+      ),
+      /aborted/,
+    );
     assert.deepEqual(ev, []);
   }
 });
@@ -781,29 +1441,87 @@ test('legacy migration converts string airlineId to ObjectId, keeps inventory, i
 test('seed orchestration: migrate before DDL, dry-run writes nothing, problems/conflicts abort before index/seed', async () => {
   const { runFlightSeed } = require('./seed/flights.migrate');
   const make = (rows: any[], events: string[], name: string, fail = false) => ({
-    collection: { find: () => (async function* () { yield* rows; })(),
-      updateOne: async () => { events.push(`${name}:write`); return { modifiedCount: fail ? 0 : 1 }; } },
-    createCollection: async () => { events.push(`${name}:createCollection`); },
-    createIndexes: async () => { events.push(`${name}:createIndexes`); } });
-  const legacy = () => ({ _id: 'f1', status: 'scheduled', departureAt: new Date('2030-11-05T10:00:00Z'), originTimezone: 'Africa/Cairo', cabins: [] });
+    collection: {
+      find: () =>
+        (async function* () {
+          yield* rows;
+        })(),
+      updateOne: async () => {
+        events.push(`${name}:write`);
+        return { modifiedCount: fail ? 0 : 1 };
+      },
+    },
+    createCollection: async () => {
+      events.push(`${name}:createCollection`);
+    },
+    createIndexes: async () => {
+      events.push(`${name}:createIndexes`);
+    },
+  });
+  const legacy = () => ({
+    _id: 'f1',
+    status: 'scheduled',
+    departureAt: new Date('2030-11-05T10:00:00Z'),
+    originTimezone: 'Africa/Cairo',
+    cabins: [],
+  });
   const quiet = () => undefined;
   // clean run: write precedes DDL, DDL precedes seed
   let ev: string[] = [];
-  const res = await runFlightSeed(make([], ev, 'a'), make([legacy()], ev, 'f'), async () => { ev.push('seed'); }, false, quiet);
+  const res = await runFlightSeed(
+    make([], ev, 'a'),
+    make([legacy()], ev, 'f'),
+    async () => {
+      ev.push('seed');
+    },
+    false,
+    quiet,
+  );
   assert.equal(res.seeded, true);
   assert.ok(ev.indexOf('f:write') < ev.indexOf('a:createCollection'));
   assert.equal(ev[ev.length - 1], 'seed');
   assert.ok(ev.includes('f:createIndexes') && ev.includes('a:createIndexes'));
   // dry-run: no writes, no DDL, no seed
   ev = [];
-  const dry = await runFlightSeed(make([], ev, 'a'), make([legacy()], ev, 'f'), async () => { ev.push('seed'); }, true, quiet);
-  assert.equal(dry.seeded, false); assert.deepEqual(ev, []);
+  const dry = await runFlightSeed(
+    make([], ev, 'a'),
+    make([legacy()], ev, 'f'),
+    async () => {
+      ev.push('seed');
+    },
+    true,
+    quiet,
+  );
+  assert.equal(dry.seeded, false);
+  assert.deepEqual(ev, []);
   // conflict aborts before DDL/seed
   ev = [];
-  await assert.rejects(runFlightSeed(make([], ev, 'a'), make([legacy()], ev, 'f', true), async () => { ev.push('seed'); }, false, quiet), /aborted/);
+  await assert.rejects(
+    runFlightSeed(
+      make([], ev, 'a'),
+      make([legacy()], ev, 'f', true),
+      async () => {
+        ev.push('seed');
+      },
+      false,
+      quiet,
+    ),
+    /aborted/,
+  );
   assert.deepEqual(ev, ['f:write']);
   // problem aborts before DDL/seed
   ev = [];
-  await assert.rejects(runFlightSeed(make([], ev, 'a'), make([{ ...legacy(), status: 'weird' }], ev, 'f'), async () => { ev.push('seed'); }, true, quiet), /aborted/);
+  await assert.rejects(
+    runFlightSeed(
+      make([], ev, 'a'),
+      make([{ ...legacy(), status: 'weird' }], ev, 'f'),
+      async () => {
+        ev.push('seed');
+      },
+      true,
+      quiet,
+    ),
+    /aborted/,
+  );
   assert.deepEqual(ev, []);
 });

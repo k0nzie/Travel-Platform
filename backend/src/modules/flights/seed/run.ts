@@ -15,14 +15,20 @@ import { seedFlightSamples } from './flights.seed';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, load: [configuration] }),
-    MongooseModule.forRootAsync({ inject: [ConfigService], useFactory: (config: ConfigService) => {
-      const uri = config.get<string>('mongo.uri');
-      if (!uri) throw new Error('MONGODB_URI is required for seed:flights');
-      // No automatic DDL: runFlightSeed creates collections/indexes only after a clean, non-dry migration.
-      return { uri, autoIndex: false, autoCreate: false };
-    } }),
+    MongooseModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => {
+        const uri = config.get<string>('mongo.uri');
+        if (!uri) throw new Error('MONGODB_URI is required for seed:flights');
+        // No automatic DDL: runFlightSeed creates collections/indexes only after a clean, non-dry migration.
+        return { uri, autoIndex: false, autoCreate: false };
+      },
+    }),
     ReferenceDataModule,
-    MongooseModule.forFeature([{ name: Airline.name, schema: AirlineSchema }, { name: Flight.name, schema: FlightSchema }]),
+    MongooseModule.forFeature([
+      { name: Airline.name, schema: AirlineSchema },
+      { name: Flight.name, schema: FlightSchema },
+    ]),
   ],
 })
 class FlightSeedModule {}
@@ -34,8 +40,20 @@ async function main() {
     const flights = app.get(getModelToken(Flight.name));
     // --dry-run (or SEED_DRY_RUN=1) reports the migration only and writes nothing.
     const dryRun = process.argv.includes('--dry-run') || process.env.SEED_DRY_RUN === '1';
-    const refs = app.get(ReferenceDataService), currency = app.get(ConfigService).get('platformCurrency');
-    await runFlightSeed(airlines, flights, () => seedFlightSamples(airlines, flights, refs, currency, process.env.SEED_FLIGHT_DATE), dryRun);
-  } finally { await app.close(); }
+    const refs = app.get(ReferenceDataService),
+      currency = app.get(ConfigService).get('platformCurrency');
+    await runFlightSeed(
+      airlines,
+      flights,
+      () => seedFlightSamples(airlines, flights, refs, currency, process.env.SEED_FLIGHT_DATE),
+      dryRun,
+    );
+  } finally {
+    await app.close();
+  }
 }
-if (require.main === module) main().catch((error) => { console.error(error); process.exitCode = 1; });
+if (require.main === module)
+  main().catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+  });

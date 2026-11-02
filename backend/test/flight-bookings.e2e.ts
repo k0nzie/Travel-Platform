@@ -281,15 +281,32 @@ describe('flight bookings and payments', { concurrency: false }, () => {
     db = app.get(getConnectionToken());
     // Reference data the flights and bookings modules validate against.
     const [eg, ae] = [new Types.ObjectId(), new Types.ObjectId()];
-    await db.collection('countries').insertMany([{ _id: eg, code: 'EG', name: 'Egypt' }, { _id: ae, code: 'AE', name: 'United Arab Emirates' }]);
+    await db.collection('countries').insertMany([
+      { _id: eg, code: 'EG', name: 'Egypt' },
+      { _id: ae, code: 'AE', name: 'United Arab Emirates' },
+    ]);
     const [cairo, dubai] = [new Types.ObjectId(), new Types.ObjectId()];
     await db.collection('cities').insertMany([
       { _id: cairo, name: 'Cairo', countryCode: 'EG', countryId: eg, timezone: 'Africa/Cairo' },
       { _id: dubai, name: 'Dubai', countryCode: 'AE', countryId: ae, timezone: 'Asia/Dubai' },
     ]);
     await db.collection('airports').insertMany([
-      { iataCode: 'CAI', name: 'Cairo International Airport', cityId: cairo, cityName: 'Cairo', countryCode: 'EG', timezone: 'Africa/Cairo' },
-      { iataCode: 'DXB', name: 'Dubai International Airport', cityId: dubai, cityName: 'Dubai', countryCode: 'AE', timezone: 'Asia/Dubai' },
+      {
+        iataCode: 'CAI',
+        name: 'Cairo International Airport',
+        cityId: cairo,
+        cityName: 'Cairo',
+        countryCode: 'EG',
+        timezone: 'Africa/Cairo',
+      },
+      {
+        iataCode: 'DXB',
+        name: 'Dubai International Airport',
+        cityId: dubai,
+        cityName: 'Dubai',
+        countryCode: 'AE',
+        timezone: 'Asia/Dubai',
+      },
     ]);
     // Transactions can't create a collection while its indexes are still building.
     await Promise.all(Object.values(db.models).map((m) => m.init()));
@@ -398,7 +415,9 @@ describe('flight bookings and payments', { concurrency: false }, () => {
 
   it('never oversells under concurrent holds', async () => {
     const attempts = await Promise.all(
-      Array.from({ length: 8 }, () => api('/flight-bookings/hold', { cookie: alice, body: oneWay(flights.nearlyFull) })),
+      Array.from({ length: 8 }, () =>
+        api('/flight-bookings/hold', { cookie: alice, body: oneWay(flights.nearlyFull) }),
+      ),
     );
     const codes = attempts.map((a) => a.status).sort();
     assert.deepEqual(codes, [201, 201, 409, 409, 409, 409, 409, 409], JSON.stringify(attempts.map((a) => a.body)));
@@ -565,7 +584,10 @@ describe('flight bookings and payments', { concurrency: false }, () => {
     assert.equal(preview.body.refundMinor, 5000, JSON.stringify(preview.body));
 
     assert.equal((await api(`/flight-bookings/${booking.id}/cancel`, { cookie: bob, body: {} })).status, 404);
-    const res = await api(`/flight-bookings/${booking.id}/cancel`, { cookie: alice, body: { reason: 'plans changed' } });
+    const res = await api(`/flight-bookings/${booking.id}/cancel`, {
+      cookie: alice,
+      body: { reason: 'plans changed' },
+    });
     assert.equal(res.status, 200, JSON.stringify(res.body));
     assert.equal(res.body.status, 'cancelled');
     assert.equal(res.body.cancellation.refundMinor, 5000);
@@ -621,7 +643,9 @@ describe('flight bookings and payments', { concurrency: false }, () => {
 
   it('refuses a cancellation while the payment is unsettled, leaving the booking intact', async () => {
     const { booking } = await book(alice, oneWay(flights.out));
-    await db.collection('payments').updateOne({ bookingId: new Types.ObjectId(booking.id) }, { $set: { status: 'pending' } });
+    await db
+      .collection('payments')
+      .updateOne({ bookingId: new Types.ObjectId(booking.id) }, { $set: { status: 'pending' } });
     const res = await api(`/flight-bookings/${booking.id}/cancel`, { cookie: alice, body: {} });
     assert.equal(res.body.code, 'PAYMENT_SETTLING');
     assert.equal(await statusOf(booking.id), 'confirmed');
@@ -682,7 +706,10 @@ describe('flight bookings and payments', { concurrency: false }, () => {
     const moved = new Date(Date.now() - 3 * 3_600_000);
     await db
       .collection('flights')
-      .updateOne({ _id: flights.out._id }, { $set: { departureAt: moved, arrivalAt: new Date(moved.getTime() + 3_600_000) } });
+      .updateOne(
+        { _id: flights.out._id },
+        { $set: { departureAt: moved, arrivalAt: new Date(moved.getTime() + 3_600_000) } },
+      );
 
     assert.deepEqual(await bookings.onScheduleChanged(String(flights.out._id)), { updated: 1 });
     assert.equal(await db.collection('notifications').countDocuments({ type: 'flight_schedule_changed' }), 1);

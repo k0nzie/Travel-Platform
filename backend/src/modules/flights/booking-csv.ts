@@ -15,12 +15,14 @@ export function csvCell(value: unknown): string {
  */
 export function bookingCsv(rows: FlightBookingRow[]): string {
   const headers = ['reference', 'passenger names', 'cabin', 'seats', 'status'];
-  const dataRows = rows.map((row) => [
-    csvCell(row.reference),
-    csvCell(Array.isArray(row.passengerNames) ? row.passengerNames.join(', ') : (row.passengerNames ?? '')),
-    csvCell(row.cabin),
-    csvCell(row.seats),
-    csvCell(row.status),
-  ].join(','));
+  const dataRows = rows.map((row) =>
+    [
+      csvCell(row.reference),
+      csvCell(Array.isArray(row.passengerNames) ? row.passengerNames.join(', ') : (row.passengerNames ?? '')),
+      csvCell(row.cabin),
+      csvCell(row.seats),
+      csvCell(row.status),
+    ].join(','),
+  );
   return [headers.map(csvCell).join(','), ...dataRows].join('\r\n') + '\r\n';
 }

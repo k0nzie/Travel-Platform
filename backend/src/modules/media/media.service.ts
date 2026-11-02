@@ -117,9 +117,7 @@ export class MediaService {
 
   /** Call when the owner itself is deleted (post, activity, hotel, ...). */
   async removeAllFor(ownerType: MediaOwnerType, ownerId: string | Types.ObjectId) {
-    const docs = await this.mediaModel
-      .find({ ownerType, ownerId: new Types.ObjectId(String(ownerId)) })
-      .exec();
+    const docs = await this.mediaModel.find({ ownerType, ownerId: new Types.ObjectId(String(ownerId)) }).exec();
     await Promise.all(docs.map((d) => this.removeDoc(d)));
     return { deleted: docs.length };
   }
@@ -128,7 +126,12 @@ export class MediaService {
    * ITN-21 clone: copies an owner's images to a new owner (new files, so deleting
    * the original never breaks the clone).
    */
-  async copyAll(ownerType: MediaOwnerType, fromOwnerId: string | Types.ObjectId, toOwnerId: string | Types.ObjectId, uploadedBy: string) {
+  async copyAll(
+    ownerType: MediaOwnerType,
+    fromOwnerId: string | Types.ObjectId,
+    toOwnerId: string | Types.ObjectId,
+    uploadedBy: string,
+  ) {
     const docs = await this.mediaModel.find({ ownerType, ownerId: new Types.ObjectId(String(fromOwnerId)) }).exec();
     const copies = [];
     for (const doc of docs) {

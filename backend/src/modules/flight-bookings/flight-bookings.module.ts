@@ -23,11 +23,7 @@ import { FlightBooking, FlightBookingSchema } from './schemas/flight-booking.sch
     PaymentsModule,
   ],
   controllers: [FlightBookingsController],
-  providers: [
-    FlightBookingsService,
-    ETicketService,
-    { provide: FLIGHT_INVENTORY, useClass: FlightsInventoryAdapter },
-  ],
+  providers: [FlightBookingsService, ETicketService, { provide: FLIGHT_INVENTORY, useClass: FlightsInventoryAdapter }],
   exports: [FlightBookingsService],
 })
 export class FlightBookingsModule {}

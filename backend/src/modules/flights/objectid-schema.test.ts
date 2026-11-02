@@ -12,7 +12,11 @@ const paths: [string, string, string[]][] = [
   ['../users/schemas/session.schema', 'SessionSchema', ['userId']],
   ['../users/schemas/user.schema', 'UserSchema', ['moderatorAssignment.providerId']],
   ['./schemas/flight.schema', 'FlightSchema', ['airlineId']],
-  ['../flight-bookings/schemas/flight-booking.schema', 'FlightBookingSchema', ['userId', 'paymentId', 'legs.flightId', 'legs.airlineId']],
+  [
+    '../flight-bookings/schemas/flight-booking.schema',
+    'FlightBookingSchema',
+    ['userId', 'paymentId', 'legs.flightId', 'legs.airlineId'],
+  ],
   ['../payments/schemas/payment.schema', 'PaymentSchema', ['bookingId', 'userId']],
   ['../reference-data/schemas/reference.schemas', 'CitySchema', ['countryId']],
   ['../reference-data/schemas/reference.schemas', 'AirportSchema', ['cityId']],
@@ -42,8 +46,10 @@ test('notification userId is cast to ObjectId on created docs (schedule notifica
   const { NotificationsService } = load('../notifications/notifications.service');
   let docs: any[] = [];
   const svc = new NotificationsService({ insertMany: async (d: any[]) => (docs = d) } as any);
-  return svc.notifyMany([id, new Types.ObjectId(id)], { type: 'flight_schedule_changed', title: 't', message: 'm' }).then((n: number) => {
-    assert.equal(n, 1);
-    assert.ok(docs[0].userId instanceof Types.ObjectId);
-  });
+  return svc
+    .notifyMany([id, new Types.ObjectId(id)], { type: 'flight_schedule_changed', title: 't', message: 'm' })
+    .then((n: number) => {
+      assert.equal(n, 1);
+      assert.ok(docs[0].userId instanceof Types.ObjectId);
+    });
 });

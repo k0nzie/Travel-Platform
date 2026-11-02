@@ -8,31 +8,87 @@ const object = (properties: Record<string, SchemaObject>): SchemaObject => ({ ty
 const cabinEnum: SchemaObject = { type: 'string', enum: ['Economy', 'Premium Economy', 'Business', 'First'] };
 export const mediaResponse = object({ id: text, url: text, mimeType: text, size: integer, createdAt: date });
 export const baggagePolicyResponse: SchemaObject = {
-  ...object({ extraBagPrice: number, maxExtraBagsPerPassenger: integer, cabins: { type: 'array', items: object({ cabin: cabinEnum, freeBags: integer, maxWeightKg: number }) } }),
+  ...object({
+    extraBagPrice: number,
+    maxExtraBagsPerPassenger: integer,
+    cabins: { type: 'array', items: object({ cabin: cabinEnum, freeBags: integer, maxWeightKg: number }) },
+  }),
   nullable: true,
 };
-export const cancellationTiersResponse: SchemaObject = { type: 'array', items: object({ minDays: integer, refundPercent: { type: 'number', minimum: 0, maximum: 100 } }) };
+export const cancellationTiersResponse: SchemaObject = {
+  type: 'array',
+  items: object({ minDays: integer, refundPercent: { type: 'number', minimum: 0, maximum: 100 } }),
+};
 export const airlineResponse = object({
-  _id: text, name: text, code: text, countryCode: text, description: text, status: { type: 'string', enum: ['active', 'suspended'] },
-  baggagePolicy: baggagePolicyResponse, cancellationTiers: cancellationTiersResponse, createdAt: date, updatedAt: date,
+  id: text,
+  name: text,
+  code: text,
+  countryCode: text,
+  description: text,
+  status: { type: 'string', enum: ['active', 'suspended'] },
+  baggagePolicy: baggagePolicyResponse,
+  cancellationTiers: cancellationTiersResponse,
+  createdAt: date,
+  updatedAt: date,
 });
 export const flightResponse = object({
-  _id: text, airlineId: text, flightNumber: text, origin: text, destination: text,
-  originTimezone: text, destinationTimezone: text, departureAt: date, arrivalAt: date, currency: text,
+  id: text,
+  airlineId: text,
+  flightNumber: text,
+  origin: text,
+  destination: text,
+  originTimezone: text,
+  destinationTimezone: text,
+  departureAt: date,
+  arrivalAt: date,
+  currency: text,
   status: { type: 'string', enum: ['Scheduled', 'Departed', 'Cancelled'] },
-  cabins: { type: 'array', items: object({ _id: text, cabin: cabinEnum, capacity: integer, price: number, held: integer, booked: integer }) },
+  cabins: {
+    type: 'array',
+    items: object({ id: text, cabin: cabinEnum, capacity: integer, price: number, held: integer, booked: integer }),
+  },
 });
 export const detailsResponse: SchemaObject = object({
-  ...Object.fromEntries(Object.entries(flightResponse.properties).filter(([key]) => key !== '_id')) as Record<string, SchemaObject>,
-  id: text, departureLocal: date, arrivalLocal: date, durationMinutes: number,
+  ...(Object.fromEntries(Object.entries(flightResponse.properties).filter(([key]) => key !== 'id')) as Record<
+    string,
+    SchemaObject
+  >),
+  id: text,
+  departureLocal: date,
+  arrivalLocal: date,
+  durationMinutes: number,
   airline: { ...airlineResponse, nullable: true },
-  baggagePolicy: baggagePolicyResponse, cancellationTiers: cancellationTiersResponse,
-  cabins: { type: 'array', items: object({ _id: text, cabin: text, capacity: integer, price: number, held: integer, booked: integer, available: integer }) },
+  baggagePolicy: baggagePolicyResponse,
+  cancellationTiers: cancellationTiersResponse,
+  cabins: {
+    type: 'array',
+    items: object({
+      id: text,
+      cabin: text,
+      capacity: integer,
+      price: number,
+      held: integer,
+      booked: integer,
+      available: integer,
+    }),
+  },
 });
 export const cancelResponse = object({ flight: flightResponse, cancelledBookings: integer, expiredBookings: integer });
 export const bookingResponse = object({
-  id: text, reference: text, passengerNames: { type: 'array', items: text }, cabin: cabinEnum, seats: integer,
-  status: { type: 'string', enum: ['confirmed', 'completed', 'cancelled'] }, createdAt: date,
+  id: text,
+  reference: text,
+  passengerNames: { type: 'array', items: text },
+  cabin: cabinEnum,
+  seats: integer,
+  status: { type: 'string', enum: ['confirmed', 'completed', 'cancelled'] },
+  createdAt: date,
 });
-export const offerResponse = object({ outbound: detailsResponse, inbound: detailsResponse, price: number, totalPrice: number, durationMinutes: number });
-export const pageResponse = (items: SchemaObject): SchemaObject => object({ items: { type: 'array', items }, page: integer, limit: integer, total: integer, totalPages: integer });
+export const offerResponse = object({
+  outbound: detailsResponse,
+  inbound: detailsResponse,
+  price: number,
+  totalPrice: number,
+  durationMinutes: number,
+});
+export const pageResponse = (items: SchemaObject): SchemaObject =>
+  object({ items: { type: 'array', items }, page: integer, limit: integer, total: integer, totalPages: integer });

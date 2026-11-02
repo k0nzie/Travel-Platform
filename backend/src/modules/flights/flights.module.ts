@@ -12,10 +12,12 @@ import { Flight, FlightSchema } from './schemas/flight.schema';
  * with FlightHooksService for cancellations, schedule changes and FLT-29.
  */
 @Module({
-  imports: [MongooseModule.forFeature([
-    { name: Airline.name, schema: AirlineSchema },
-    { name: Flight.name, schema: FlightSchema },
-  ])],
+  imports: [
+    MongooseModule.forFeature([
+      { name: Airline.name, schema: AirlineSchema },
+      { name: Flight.name, schema: FlightSchema },
+    ]),
+  ],
   controllers: [AirlinesController, FlightsController],
   providers: [FlightsService, FlightHooksService],
   exports: [FlightsService, FlightHooksService],

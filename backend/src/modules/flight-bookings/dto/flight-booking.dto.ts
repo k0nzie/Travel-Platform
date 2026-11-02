@@ -66,7 +66,11 @@ export class PassengerDto {
   @Matches(/^[A-Za-z0-9]{5,20}$/, { message: 'passportNumber must be 5-20 letters or digits' })
   passportNumber: string;
 
-  @ApiPropertyOptional({ minimum: 0, default: 0, description: 'FLT-19: bags beyond the included allowance, up to the airline maximum' })
+  @ApiPropertyOptional({
+    minimum: 0,
+    default: 0,
+    description: 'FLT-19: bags beyond the included allowance, up to the airline maximum',
+  })
   @IsOptional()
   @IsInt()
   @Min(0)
