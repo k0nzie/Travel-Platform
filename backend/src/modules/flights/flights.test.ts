@@ -25,12 +25,21 @@ function fixture(overrides: any = {}) {
   const reference = { assertCountryCodes: async (v: any) => { calls.push(['countries', v]); return v; }, assertSupportedCurrency: async (v: any) => v };
   const media = { saveImages: async (v: any) => { calls.push(['media', v]); return [{ id: flightId, url: '/uploads/logo.png' }]; } };
   const audit = { log: async (...args: any[]) => calls.push(['audit', ...args]) };
-  const notifications = { notifyMany: async (...args: any[]) => calls.push(['notify', ...args]) };
   const { FlightsService } = require('./flights.service');
   const { FlightHooksService } = require('./flight-hooks.service');
   const hooks = new FlightHooksService();
-  const service = new FlightsService({ exists: () => query(null), ...overrides.flights }, overrides.airlines ?? airlines, { find: () => query([]), updateMany: () => query({}), distinct: () => query([]), countDocuments: () => query(0), ...overrides.bookings }, overrides.reference ?? reference, media, audit, notifications, { get: () => 'USD' }, hooks);
-  return { service, calls, hooks };
+  // Fake FlightBookingsBridge: flights never touches booking documents, it calls these.
+  const bridge = {
+    countForFlight: async () => 0,
+    listForFlight: async () => ({ items: [], page: 1, limit: 10, total: 0, totalPages: 1 }),
+    exportForFlight: async () => [],
+    onFlightCancelled: async () => ({ cancelled: 0, expired: 0, failed: [] }),
+    onScheduleChanged: async (id: string) => { calls.push(['schedule', id]); return { updated: 0 }; },
+    ...overrides.bridge,
+  };
+  if (!overrides.noBridge) hooks.register(bridge);
+  const service = new FlightsService({ exists: () => query(null), ...overrides.flights }, overrides.airlines ?? airlines, overrides.reference ?? reference, media, audit, { get: () => 'USD' }, hooks);
+  return { service, calls, hooks, bridge };
 }
 
 test('airline creation enforces admin in service, validates countries, and audits', async () => {
@@ -125,10 +134,9 @@ test('lifecycle uses guarded updates, skips cancelled flights, and catches up af
   const { service } = fixture({ flights: { updateMany: (...args: any[]) => { calls.push(args); return query({ modifiedCount: 1 }); } } });
   const now = new Date('2030-11-06T00:00Z');
   await service.advanceStatuses(now);
+  assert.equal(calls.length, 1, 'FLT-30 has no state after Departed');
   assert.deepEqual(calls[0][0], { status: 'Scheduled', departureAt: { $lte: now } });
   assert.equal(calls[0][1].$set.status, 'Departed');
-  assert.deepEqual(calls[1][0], { status: 'Departed', arrivalAt: { $lte: now } });
-  assert.equal(calls[1][1].$set.status, 'Completed');
 });
 
 const storedFlight = () => ({
@@ -140,7 +148,7 @@ const storedFlight = () => ({
 test('flight edit preserves counters and compares inventory snapshot to reject concurrent holds', async () => {
   const calls: any[] = [];
   const stored = storedFlight();
-  const { service } = fixture({ reference: refs, flights: { findById: () => query(stored), findOneAndUpdate: (...args: any[]) => { calls.push(args); return query(stored); } }, bookings: { distinct: () => query([airlineId]) } });
+  const { service } = fixture({ reference: refs, flights: { findById: () => query(stored), findOneAndUpdate: (...args: any[]) => { calls.push(args); return query(stored); } } });
   await service.updateFlight(moderator, flightId, { cabins: [{ cabin: 'Economy', capacity: 6, price: 150 }] });
   assert.deepEqual(calls[0][0].cabins, stored.cabins);
   assert.equal(calls[0][0].__v, 0);
@@ -155,7 +163,7 @@ test('flight edit preserves counters and compares inventory snapshot to reject c
 test('edit and cancel enforce provider scope and scheduled future lifecycle; notify after successful mutation', async () => {
   let stored = storedFlight();
   const mutations: any[] = [];
-  const { service, calls } = fixture({ reference: refs, flights: { findById: () => query(stored), findOneAndUpdate: (...args: any[]) => { mutations.push(args); return query({ ...stored, status: 'Cancelled' }); } }, bookings: { distinct: () => query([airlineId]) } });
+  const { service, calls } = fixture({ reference: refs, flights: { findById: () => query(stored), findOneAndUpdate: (...args: any[]) => { mutations.push(args); return query({ ...stored, status: 'Cancelled' }); } } });
   const stranger = { ...moderator, moderatorAssignment: { providerType: 'airline', providerId: flightId } };
   await assert.rejects(service.cancelFlight(stranger, flightId), /assigned airline/);
   await assert.rejects(service.updateFlight(stranger, flightId, {}), /assigned airline/);
@@ -163,11 +171,12 @@ test('edit and cancel enforce provider scope and scheduled future lifecycle; not
   await service.cancelFlight(moderator, flightId);
   assert.equal(mutations[0][0].status, 'Scheduled');
   assert.equal(mutations[0][1].$set.status, 'Cancelled');
-  for (const status of ['Departed', 'Completed']) {
-    stored = { ...stored, status };
-    await assert.rejects(service.cancelFlight(moderator, flightId));
-    await assert.rejects(service.updateFlight(moderator, flightId, {}));
-  }
+  stored = { ...stored, status: 'Departed' };
+  await assert.rejects(service.cancelFlight(moderator, flightId));
+  await assert.rejects(service.updateFlight(moderator, flightId, {}));
+  // A Cancelled flight cannot be edited; cancelling it again only retries pending refunds (idempotent).
+  stored = { ...storedFlight(), status: 'Cancelled' };
+  await assert.rejects(service.updateFlight(moderator, flightId, {}));
   stored = { ...storedFlight(), departureAt: new Date(0) };
   await assert.rejects(service.cancelFlight(moderator, flightId));
 });
@@ -234,26 +243,27 @@ test('airport local validation rejects DST gaps, overlaps, offsets and invalid d
   assert.equal((autumn.end - autumn.start) / 3600000, 25);
 });
 
-test('booking list and CSV share scope and filters, paginate lists and escape RFC4180 cells', async () => {
-  const filters: any[] = [];
-  const rows = [{ _id: flightId, reference: 'A,"B"\r\nC', userId: airlineId, status: 'confirmed', cabin: 'Economy', seats: 2, passengerNames: ['Alice Smith', 'Bob Jones'], createdAt: new Date('2030-01-01T00:00Z') }];
-  const bookings = { find: (f: any) => { filters.push(f); return query(rows); }, countDocuments: () => query(1) };
-  const { service } = fixture({ flights: { findById: () => query(storedFlight()) }, bookings });
+test('booking list and CSV share scope and filters, delegate to the bookings bridge and escape RFC4180 cells', async () => {
+  const seen: any[] = [];
+  const rows = [{ id: 'b1', reference: 'A,"B"\r\nC', status: 'confirmed', cabin: 'Economy', seats: 2, passengerNames: ['Alice Smith', 'Bob Jones'], createdAt: new Date('2030-01-01T00:00Z') }];
+  const bridge = {
+    listForFlight: async (id: string, q: any) => { seen.push(['list', id, q]); return { items: rows, page: 1, limit: 10, total: 1, totalPages: 1 }; },
+    exportForFlight: async (id: string, q: any, max: number) => { seen.push(['export', id, q, max]); return rows; },
+  };
+  const { service } = fixture({ flights: { findById: () => query(storedFlight()) }, bridge });
   const q = { status: 'confirmed', cabin: 'Economy', reference: 'A.*', from: '2030-01-01', to: '2030-01-02', page: 1, limit: 10 };
   const result = await service.listBookings(moderator, flightId, q);
   const csv = await service.bookingsCsv(moderator, flightId, q);
   assert.equal(result.total, 1);
-  assert.deepEqual(filters[0], filters[1]);
-  assert.equal(String(filters[0].flightId), flightId);
-  assert.equal(filters[0].reference.source, 'A\\.\\*');
-  assert.equal(filters[0].createdAt.$lt.toISOString(), '2030-01-03T00:00:00.000Z');
+  assert.deepEqual(seen[0].slice(1), [flightId, q]);
+  assert.deepEqual(seen[1].slice(1), [flightId, q, 5000]);
   assert.ok(csv.startsWith('"reference","passenger names","cabin","seats","status"\r\n'));
   assert.ok(csv.includes('"A,""B""\r\nC","Alice Smith, Bob Jones","Economy","2","confirmed"'));
   assert.ok(csv.endsWith('\r\n'));
   const stranger = { ...moderator, role: 'user' };
   await assert.rejects(service.listBookings(stranger, flightId, {}), /assigned airline/);
   await assert.rejects(service.bookingsCsv(stranger, flightId, {}), /assigned airline/);
-  assert.equal(filters.length, 2);
+  assert.equal(seen.length, 2, 'scope is checked before the bridge is called');
   await assert.rejects(service.listBookings(moderator, flightId, { from: '2030-01-03', to: '2030-01-01' }));
 });
 
@@ -281,7 +291,7 @@ test('simultaneous reserve operations cannot oversell cabin capacity', async () 
       },
     }),
   };
-  const service = new FlightsService(flightsMock as any, {} as any, {} as any, {} as any, {} as any, {} as any, {} as any, { get: () => 'USD' } as any, new (require('./flight-hooks.service').FlightHooksService)());
+  const service = new FlightsService(flightsMock as any, {} as any, {} as any, {} as any, {} as any, { get: () => 'USD' } as any, new (require('./flight-hooks.service').FlightHooksService)());
   const [res1, res2] = await Promise.all([
     service.reserveSeats(flightId, 'Economy', 2),
     service.reserveSeats(flightId, 'Economy', 2),
@@ -333,27 +343,20 @@ test('HTTP routes declare public/role boundaries, ObjectId parsing, CSV headers 
   } finally { await app.close(); }
 });
 
-test('FlightsModule exports its service and registers the separate read-only booking contract', () => {
+test('FlightsModule exports its service and hooks, and registers no booking model of its own', () => {
   const { FlightsModule } = require('./flights.module');
   const { FlightsService } = require('./flights.service');
   const { FlightHooksService } = require('./flight-hooks.service');
+  const exported = Reflect.getMetadata('exports', FlightsModule);
+  assert.ok(exported.includes(FlightsService));
+  assert.ok(exported.includes(FlightHooksService));
   const hooks = new FlightHooksService();
-  assert.ok(Reflect.getMetadata('exports', FlightsModule).includes(FlightsService));
-  const { FlightBookingViewSchema } = require('./schemas/flight-booking-view.schema');
-  assert.equal(FlightBookingViewSchema.options.collection, 'flight_bookings');
-  assert.equal(FlightBookingViewSchema.options.autoIndex, false);
+  assert.throws(() => hooks.bookings, /not available/, 'no bridge registered means 503, never silent success');
 });
 
-test('FlightBookingView schema and bookingCsv enforce FLT-29 columns and reject malformed rows', () => {
-  const { model } = require('mongoose');
-  const { FlightBookingViewSchema } = require('./schemas/flight-booking-view.schema');
+test('bookingCsv enforces the FLT-29 column contract', () => {
   const { bookingCsv } = require('./booking-csv');
-  const Model = model('FlightBookingTest', FlightBookingViewSchema);
-  const doc = new Model({ flightId, reference: 'REF123', cabin: 'Economy', seats: 2, status: 'confirmed', passengerNames: ['Jane Doe'] });
-  assert.equal(doc.validateSync(), undefined);
-  const invalid = new Model({ flightId, reference: 'REF123', cabin: 'Economy', seats: 0, status: 'Invalid' });
-  assert.ok(invalid.validateSync());
-  const csv = bookingCsv([{ reference: 'R1', passengerNames: ['P1', 'P2'], cabin: 'Business', seats: 2, status: 'cancelled' } as any]);
+  const csv = bookingCsv([{ id: 'b1', reference: 'R1', passengerNames: ['P1', 'P2'], cabin: 'Business', seats: 2, status: 'cancelled' } as any]);
   assert.equal(csv, '"reference","passenger names","cabin","seats","status"\r\n"R1","P1, P2","Business","2","cancelled"\r\n');
 });
 
@@ -509,24 +512,20 @@ test('details resolve effective lifecycle at exact time boundaries and never off
   const departed = flightDetails(stored, stored.departureAt);
   assert.equal(departed.status, 'Departed');
   assert.equal(departed.cabins[0].available, 0);
-  assert.equal(flightDetails(stored, stored.arrivalAt).status, 'Completed');
-  assert.equal(flightDetails({ ...stored, status: 'Departed' }, stored.arrivalAt).status, 'Completed');
+  assert.equal(flightDetails(stored, stored.arrivalAt).status, 'Departed');
+  assert.equal(flightDetails({ ...stored, status: 'Departed' }, stored.arrivalAt).status, 'Departed');
   assert.equal(flightDetails({ ...stored, status: 'Cancelled' }, new Date()).cabins[0].available, 0);
 });
 
-test('schedule edits notify affected booking users while fare-only edits do not', async () => {
-  let target: any;
+test('schedule edits hand off to bookings (which notify Confirmed passengers) while fare-only edits do not', async () => {
   const { service, calls } = fixture({ reference: refs,
     flights: { findById: () => query(storedFlight()), findOneAndUpdate: () => query(storedFlight()) },
-    bookings: { distinct: (field: any, filter: any) => { target = [field, filter]; return query([airlineId]); } },
   });
   await service.updateFlight(moderator, flightId, { departureLocal: '2030-11-05T11:00' });
-  assert.equal(target[0], 'userId');
-  assert.deepEqual(target[1].status.$in, ['confirmed']);
-  assert.equal(calls[0][2].type, 'flight_schedule_changed');
+  assert.deepEqual(calls.filter((c) => c[0] === 'schedule'), [['schedule', flightId]]);
   calls.length = 0;
   await service.updateFlight(moderator, flightId, { cabins: [{ cabin: 'Economy', capacity: 10, price: 120 }] });
-  assert.equal(calls.length, 0);
+  assert.equal(calls.filter((c) => c[0] === 'schedule').length, 0);
 });
 
 // ---- Rework: airline policies, Premium Economy, guarded edits, active filter, duplicates, FLT-06 handoff ----
@@ -627,10 +626,10 @@ test('airports are locked once any booking exists; times and cabins stay editabl
   const dxb = { _id: 'dxb', iataCode: 'DXB', timezone: 'Asia/Dubai' };
   const make = (count: number) => fixture({ reference: { ...refs, resolveAirport: async (v: string) => v === 'DXB' ? dxb : refs.resolveAirport(v) },
     flights: { findById: () => query(stored), findOneAndUpdate: () => query(stored) },
-    bookings: { countDocuments: (f: any) => { counted.push(f); return query(count); }, distinct: () => query([]) } });
+    bridge: { countForFlight: async (id: string) => { counted.push(id); return count; } } });
   await assert.rejects(make(1).service.updateFlight(moderator, flightId, { destination: 'DXB' }), /bookings/);
   await assert.rejects(make(1).service.updateFlight(moderator, flightId, { origin: 'DXB' }), /bookings/);
-  assert.equal(String(counted[0].flightId), flightId);
+  assert.equal(counted[0], flightId);
   await make(0).service.updateFlight(moderator, flightId, { destination: 'DXB' });
   await make(3).service.updateFlight(moderator, flightId, { departureLocal: '2030-11-05T11:00', arrivalLocal: '2030-11-05T14:00', cabins: [{ cabin: 'Economy', price: 90 }] });
   const { UpdateFlightDto } = require('./dto/flights.dto');
@@ -659,83 +658,47 @@ test('POST/PATCH cabins: unique class, positive values, capacity floor, 404 for 
   await assert.rejects(service.addCabin({ ...moderator, moderatorAssignment: { providerType: 'airline', providerId: flightId } }, flightId, { cabin: 'First', capacity: 1, price: 1 }), /assigned airline/);
 });
 
-function cancelFixture(opts: { fail?: boolean; modified?: Record<string, number> } = {}) {
-  const u1 = '507f1f77bcf86cd799439031', u2 = '507f1f77bcf86cd799439032';
-  const rows: any[] = [{ _id: 'b1', userId: u1, status: 'cancelled' }, { _id: 'b2', userId: u2, status: 'expired' }];
-  const updates: any[] = [], handlerCalls: any[] = [];
+function cancelFixture(results: any[] = [{ cancelled: 1, expired: 1, failed: [] }]) {
   const stored = storedFlight();
+  const mutations: any[] = [], bridgeCalls: string[] = [];
   const ctx = fixture({
-    flights: { findById: () => query(stored), findOneAndUpdate: () => query({ ...stored, status: 'Cancelled' }) },
-    bookings: {
-      find: () => query(rows.filter((r) => r.handoffPending !== false)),
-      updateMany: (...a: any[]) => {
-        updates.push(a);
-        if (a[1].$set.handoffPending === false) rows.forEach((r) => { if (a[0]._id.$in.includes(r._id)) r.handoffPending = false; });
-        const first = updates.length <= 2;
-        return query({ modifiedCount: first ? (opts.modified?.[a[0].status] ?? 1) : 0 });
-      },
-    },
+    flights: { findById: () => query(stored), findOneAndUpdate: (...a: any[]) => { mutations.push(a); return query({ ...stored, status: 'Cancelled' }); } },
+    bridge: { onFlightCancelled: async (id: string) => { bridgeCalls.push(id); return results[Math.min(bridgeCalls.length, results.length) - 1]; } },
   });
-  let failing = !!opts.fail;
-  ctx.hooks.registerCancellationHandler('t', async (e: any) => { handlerCalls.push(e); if (failing) throw Error('stripe down'); });
-  return { ...ctx, updates, handlerCalls, heal: () => { failing = false; }, u1, u2 };
+  return { ...ctx, mutations, bridgeCalls, stored };
 }
 
-test('FLT-06: cancel flags transitioned rows, notifies all, hands only committed ids to handler, clears marker', async () => {
-  const { service, calls, updates, handlerCalls, u1, u2 } = cancelFixture();
+test('FLT-06: cancel marks the flight Cancelled first, then hands every booking to the bookings module', async () => {
+  const { service, mutations, bridgeCalls } = cancelFixture();
   const result = await service.cancelFlight(moderator, flightId);
-  assert.equal(result.flight.status, 'Cancelled');
-  assert.equal(updates[0][0].status, 'confirmed');
-  assert.deepEqual(updates[0][1].$set, { status: 'cancelled', refundPercent: 100, handoffPending: true });
-  assert.deepEqual(updates[1][1].$set, { status: 'expired', handoffPending: true });
-  assert.deepEqual(calls.find((c) => c[0] === 'notify')[1].map(String), [u1, u2]);
-  assert.deepEqual(handlerCalls[0], { flightId, cancelledBookingIds: ['b1'], expiredBookingIds: ['b2'], refundPercent: 100 });
-  assert.deepEqual(updates[2][1].$set, { handoffPending: false });
+  assert.equal(mutations.length, 1);
+  assert.deepEqual(mutations[0][1].$set, { status: 'Cancelled' }, 'held seats are released by bookings, not zeroed here');
+  assert.deepEqual(bridgeCalls, [flightId]);
   assert.deepEqual({ c: result.cancelledBookings, e: result.expiredBookings }, { c: 1, e: 1 });
 });
 
-test('FLT-06: handler failure surfaces 503, keeps rows pending, and retry on a cancelled flight redelivers once without re-notifying', async () => {
-  const { service, calls, handlerCalls, heal } = cancelFixture({ fail: true });
-  await assert.rejects(service.cancelFlight(moderator, flightId), /refund handoff failed/);
-  assert.equal(handlerCalls.length, 1);
-  heal();
-  const cancelledFlight = { ...storedFlight(), status: 'Cancelled' };
-  (service as any).flights.findById = () => query(cancelledFlight);
-  const retry = await service.cancelFlight(moderator, flightId);
-  assert.deepEqual(handlerCalls[1].cancelledBookingIds, ['b1']);
-  assert.equal(retry.cancelledBookings, 1);
-  await service.cancelFlight(moderator, flightId);
-  assert.equal(handlerCalls.length, 2, 'completed handoff is not redelivered');
-  assert.equal(calls.filter((c) => c[0] === 'notify').length, 1);
-});
-
-test('FLT-06: no refund handler registered keeps marker pending, surfaces 503, and later registration redelivers', async () => {
-  const { service, updates, handlerCalls, hooks } = cancelFixture();
-  (hooks as any).handlers.clear();
-  await assert.rejects(service.cancelFlight(moderator, flightId), /refund handoff failed/);
-  assert.ok(!updates.some((u) => u[1].$set.handoffPending === false), 'marker must not be cleared');
-  hooks.registerCancellationHandler('late', async (e: any) => { handlerCalls.push(e); });
+test('FLT-06: failed refunds surface 503; repeating the cancel on a Cancelled flight retries without touching the flight', async () => {
+  const { service, mutations, bridgeCalls } = cancelFixture([
+    { cancelled: 0, expired: 1, failed: ['REF1'] },
+    { cancelled: 1, expired: 0, failed: [] },
+  ]);
+  await assert.rejects(service.cancelFlight(moderator, flightId), /repeat the cancel request/i);
   (service as any).flights.findById = () => query({ ...storedFlight(), status: 'Cancelled' });
-  await service.cancelFlight(moderator, flightId);
-  assert.deepEqual(handlerCalls[0].cancelledBookingIds, ['b1']);
-  assert.ok(updates.some((u) => u[1].$set.handoffPending === false));
+  const retry = await service.cancelFlight(moderator, flightId);
+  assert.equal(mutations.length, 1, 'already-cancelled flight is not updated again');
+  assert.equal(bridgeCalls.length, 2);
+  assert.equal(retry.cancelledBookings, 1);
 });
 
-test('FLT-06: booking that left confirmed between selection and transition is not sent for refund', async () => {
-  // b1 was completed concurrently: the conditional updateMany never flagged it, so only b2 carries the marker.
-  const { service, handlerCalls, updates } = cancelFixture({ modified: { confirmed: 0 } });
-  (service as any).bookings.find = () => query([{ _id: 'b2', userId: 'u2', status: 'expired' }]);
-  const result = await service.cancelFlightBookings(flightId);
-  assert.equal(updates[0][0].status, 'confirmed');
-  assert.deepEqual(handlerCalls[0].cancelledBookingIds, []);
-  assert.deepEqual(handlerCalls[0].expiredBookingIds, ['b2']);
-  assert.equal(result.cancelledBookings, 0);
+test('FLT-06: without a bookings bridge the cancel fails loudly instead of skipping refunds', async () => {
+  const { service } = fixture({ noBridge: true, flights: { findById: () => query(storedFlight()), findOneAndUpdate: () => query({ ...storedFlight(), status: 'Cancelled' }) } });
+  await assert.rejects(service.cancelFlight(moderator, flightId), /not available/);
 });
 
 test('status casing: flight and booking statuses use requirement values', () => {
   const { FlightStatus } = require('./schemas/flight.schema');
   const { BookingStatus } = require('../../common/constants/enums');
-  assert.deepEqual(Object.values(FlightStatus), ['Scheduled', 'Departed', 'Completed', 'Cancelled']);
+  assert.deepEqual(Object.values(FlightStatus), ['Scheduled', 'Departed', 'Cancelled']);
   assert.deepEqual(Object.values(BookingStatus).sort(), ['cancelled', 'completed', 'confirmed', 'expired', 'pending_payment']);
 });
 

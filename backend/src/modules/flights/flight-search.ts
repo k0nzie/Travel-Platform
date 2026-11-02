@@ -4,9 +4,8 @@ import { FlightSearchDto, FlightSort } from './dto/flights.dto';
 
 /** Public projection deliberately excludes persistence/version metadata. */
 export function flightDetails(flight: Flight & { _id: unknown; airline?: unknown }, now = new Date()) {
-  const status = flight.status === FlightStatus.Scheduled && flight.departureAt <= now
-    ? (flight.arrivalAt <= now ? FlightStatus.Completed : FlightStatus.Departed)
-    : flight.status === FlightStatus.Departed && flight.arrivalAt <= now ? FlightStatus.Completed : flight.status;
+  // FLT-30: report Departed immediately, even between cron ticks.
+  const status = flight.status === FlightStatus.Scheduled && flight.departureAt <= now ? FlightStatus.Departed : flight.status;
   return {
     id: String(flight._id), airlineId: String(flight.airlineId),
     airline: (flight as any).airline ? {

@@ -45,14 +45,16 @@ npm run start:dev
 
 ## Implemented so far (Person 3 — flight booking and payments)
 
-Runs against stub flights until Person 2's module is merged; see the integration guide.
-Test with `npm run test:bookings`.
+Integrated with Person 2's real flights through `FlightsInventoryAdapter`; see [docs/P3_BOOKING_PAYMENTS.md](docs/P3_BOOKING_PAYMENTS.md).
+Test with `npm run test:bookings` (end to end, includes the flights integration).
 
 | Area | Endpoints | Requirements |
 |---|---|---|
-| Booking | `POST /flight-bookings/quote`, `POST /flight-bookings`, `GET /flight-bookings`, `GET /flight-bookings/:id` | FLT-12, 19, 21, 22, 23, 26 |
-| Tickets and cancelling | `GET /flight-bookings/:id/e-ticket`, `GET /flight-bookings/:id/cancellation-preview`, `POST /flight-bookings/:id/cancel` | FLT-25, 26, PAY-03 |
-| Payments | `GET /payments/checkout/:type/:bookingId`, `POST /payments/intent`, `POST /payments/webhook`, `GET /payments/:id`, `POST /payments/:id/sync`, `POST /payments/:id/test-confirm` | PAY-01 to 04, GEN-11 |
+| Booking | `POST /flight-bookings` (summary), `POST /flight-bookings/hold`, `GET /flight-bookings`, `GET /flight-bookings/:id` | FLT-12, 19, 21, 22, 25 |
+| Tickets and cancelling | `GET /flight-bookings/:id/e-ticket`, `GET /flight-bookings/:id/cancellation-preview`, `POST /flight-bookings/:id/cancel` | FLT-23, 26, PAY-03 |
+| Policies | `GET /bookings/:type/:id/policies`, `POST /bookings/:type/:id/accept-policies` | PAY-02 |
+| Payments | `POST /payments`, `POST /payments/:id/retry`, `GET /payments/:id`, `POST /payments/webhook`, `POST /payments/:id/sync`, `POST /payments/:id/test-confirm` | PAY-01, 04, GEN-11 |
+| Refunds | `GET /refunds/:id` | PAY-03 |
 
 ### Auth design (for the discussion)
 

@@ -1,9 +1,14 @@
 import { ClientSession } from 'mongoose';
+import { CancellationTier } from '../../flights/flight-policy';
+import { CabinType } from '../../flights/schemas/flight.schema';
+
+export { CancellationTier };
 
 /**
- * Everything flight booking needs from Person 2's flights module. Bookings only
- * ever use this interface, so P2's real service replaces the stub with one line
- * in flight-bookings.module.ts (see docs/P3_BOOKING_PAYMENTS.md).
+ * Everything flight booking needs from the flights module, in the shape bookings
+ * store: money in integer minor units (what Stripe charges), fares per passenger
+ * type, and the baggage rules of the chosen cabin. FlightsInventoryAdapter maps
+ * Person 2's FlightsService onto it.
  */
 export const FLIGHT_INVENTORY = Symbol('FLIGHT_INVENTORY');
 
@@ -20,26 +25,21 @@ export interface AirportInfo {
   timezone: string; // IANA, used for GEN-06 local times
 }
 
-/** FLT-09: refund percent once at least `minDaysBeforeDeparture` days remain. */
-export interface CancellationTier {
-  minDaysBeforeDeparture: number;
-  refundPercent: number;
-}
-
-/** FLT-08 */
+/** FLT-04 / FLT-08, resolved for one cabin. Extra bags have the same max weight as free ones. */
 export interface BaggagePolicy {
-  cabinBagsIncluded: number;
-  checkedBagsIncluded: number;
+  freeBags: number;
+  maxWeightKg: number | null;
   maxExtraBagsPerPassenger: number;
   /** Per extra bag, per passenger, per flight. */
   extraBagPriceMinor: number;
 }
 
 export interface CabinOffer {
-  cabinClass: string;
+  cabinClass: CabinType;
   availableSeats: number;
-  /** Fare per passenger type, in integer minor units of the platform currency. */
+  /** FLT-12: adults and children pay the cabin fare, infants 10% of it. Integer minor units. */
   fares: Record<PassengerType, number>;
+  baggagePolicy: BaggagePolicy;
 }
 
 export interface FlightSnapshot {
@@ -51,11 +51,11 @@ export interface FlightSnapshot {
   destination: AirportInfo;
   departureAt: Date; // UTC
   arrivalAt: Date; // UTC
-  /** False once the flight is cancelled, departed or otherwise closed for sale. */
+  /** False once the flight is cancelled, departed, or its airline is inactive. */
   bookable: boolean;
   currency: string;
   cabins: CabinOffer[];
-  baggagePolicy: BaggagePolicy;
+  /** FLT-09: { minDays, refundPercent } tiers, as accepted at payment (PAY-02). */
   cancellationTiers: CancellationTier[];
 }
 
@@ -67,16 +67,16 @@ export interface FlightInventoryPort {
   getFlightForBooking(flightId: string): Promise<FlightSnapshot | null>;
 
   /** available -> held. Resolves false, changing nothing, when too few seats are left. */
-  reserveSeats(flightId: string, cabinClass: string, count: number, session?: ClientSession): Promise<boolean>;
+  reserveSeats(flightId: string, cabinClass: CabinType, count: number, session?: ClientSession): Promise<boolean>;
 
-  /** held -> available (hold expired). */
-  releaseSeats(flightId: string, cabinClass: string, count: number, session?: ClientSession): Promise<boolean>;
+  /** held -> available (hold expired or flight cancelled). */
+  releaseSeats(flightId: string, cabinClass: CabinType, count: number, session?: ClientSession): Promise<boolean>;
 
-  /** held -> booked (payment confirmed). */
-  convertHeldToBooked(flightId: string, cabinClass: string, count: number, session?: ClientSession): Promise<boolean>;
+  /** held -> booked (payment confirmed). False if the flight is no longer bookable. */
+  convertHeldToBooked(flightId: string, cabinClass: CabinType, count: number, session?: ClientSession): Promise<boolean>;
 
   /** booked -> available (confirmed booking cancelled). */
-  releaseBookedSeats(flightId: string, cabinClass: string, count: number, session?: ClientSession): Promise<boolean>;
+  releaseBookedSeats(flightId: string, cabinClass: CabinType, count: number, session?: ClientSession): Promise<boolean>;
 
   computeRefundPercent(tiers: CancellationTier[], daysRemaining: number): number;
 }

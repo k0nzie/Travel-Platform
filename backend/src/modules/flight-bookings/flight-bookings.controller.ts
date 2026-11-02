@@ -18,30 +18,30 @@ import { FlightBookingsService } from './flight-bookings.service';
 export class FlightBookingsController {
   constructor(private readonly bookings: FlightBookingsService) {}
 
-  @Post('quote')
+  @Post()
   @Roles(Role.User)
   @HttpCode(200)
-  @ApiOperation({ summary: 'FLT-12, FLT-19, FLT-21: validate passengers + baggage and return the price summary' })
-  quote(@Body() dto: CreateFlightBookingDto) {
+  @ApiOperation({ summary: 'FLT-12, FLT-19, FLT-21: validate passengers and baggage, return the booking summary (nothing held)' })
+  summary(@Body() dto: CreateFlightBookingDto) {
     return this.bookings.quote(dto);
   }
 
-  @Post()
+  @Post('hold')
   @Roles(Role.User)
-  @ApiOperation({ summary: 'FLT-22: hold the seats for 10 minutes (booking starts as pending_payment)' })
-  create(@CurrentUser() user: AuthUser, @Body() dto: CreateFlightBookingDto) {
+  @ApiOperation({ summary: 'FLT-22: hold the seats for 10 minutes; the booking starts as pending_payment' })
+  hold(@CurrentUser() user: AuthUser, @Body() dto: CreateFlightBookingDto) {
     return this.bookings.createHold(user, dto);
   }
 
   @Get()
   @Roles(Role.User)
-  @ApiOperation({ summary: 'FLT-26: my flight bookings, filter by status or upcoming / past' })
+  @ApiOperation({ summary: 'FLT-25: my flight bookings, grouped with scope=upcoming | past | cancelled' })
   list(@CurrentUser() user: AuthUser, @Query() query: FlightBookingQueryDto) {
     return this.bookings.list(user, query);
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'FLT-23: booking details with reference (owner or admin)' })
+  @ApiOperation({ summary: 'FLT-25: booking details with reference, payment and refund status (owner or admin)' })
   getOne(@CurrentUser() user: AuthUser, @Param('id', ParseObjectIdPipe) id: string) {
     return this.bookings.getOne(user, id);
   }
@@ -49,7 +49,7 @@ export class FlightBookingsController {
   @Get(':id/e-ticket')
   @ApiProduces('application/pdf')
   @Header('Content-Type', 'application/pdf')
-  @ApiOperation({ summary: 'FLT-25: download the e-ticket PDF' })
+  @ApiOperation({ summary: 'FLT-23: download the e-ticket PDF' })
   async eTicket(
     @CurrentUser() user: AuthUser,
     @Param('id', ParseObjectIdPipe) id: string,
@@ -62,7 +62,7 @@ export class FlightBookingsController {
 
   @Get(':id/cancellation-preview')
   @Roles(Role.User)
-  @ApiOperation({ summary: 'FLT-26: the refund I would get if I cancelled now' })
+  @ApiOperation({ summary: 'FLT-26: the refund I would get if I cancelled now (outbound segment tier)' })
   cancellationPreview(@CurrentUser() user: AuthUser, @Param('id', ParseObjectIdPipe) id: string) {
     return this.bookings.cancellationPreview(user, id);
   }

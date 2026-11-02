@@ -6,7 +6,7 @@ import { FlightBooking } from './schemas/flight-booking.schema';
 const localTime = (date: Date, zone: string) =>
   DateTime.fromJSDate(date, { zone: 'utc' }).setZone(zone).toFormat('ccc dd LLL yyyy, HH:mm');
 
-/** FLT-25: one-file PDF e-ticket, built on demand from the booking. */
+/** FLT-23: one-file PDF e-ticket, built on demand from the booking. */
 @Injectable()
 export class ETicketService {
   render(booking: FlightBooking): Promise<Buffer> {
@@ -35,8 +35,8 @@ export class ETicketService {
               localTime(leg.arrivalAt, leg.destination.timezone),
           )
           .text(
-            `Baggage: ${leg.baggagePolicy.cabinBagsIncluded} cabin, ` +
-              `${leg.baggagePolicy.checkedBagsIncluded} checked included per passenger`,
+            `Baggage: ${leg.baggagePolicy.freeBags} bag(s) included per passenger` +
+              (leg.baggagePolicy.maxWeightKg ? `, up to ${leg.baggagePolicy.maxWeightKg} kg each` : ''),
           );
       }
       doc.moveDown();

@@ -106,12 +106,12 @@ export class FlightsController {
   updateCabin(@CurrentUser() user: AuthUser, @Param('id', ParseObjectIdPipe) id: string, @Param('cabinId', ParseObjectIdPipe) cabinId: string, @Body() dto: UpdateCabinDto) { return this.flights.updateCabin(user, id, cabinId, dto); }
 
   @Roles(Role.AirlineModerator) @Post(':id/cancel')
-  @ApiOperation({ summary: 'FLT-06: cancel a scheduled future flight', description: 'Terminal. Releases held seats, cancels Confirmed bookings with a 100% refund marker, expires PendingPayment bookings, notifies passengers and calls the booking module handoff. Departed/completed/cancelled flights return 409.' })
+  @ApiOperation({ summary: 'FLT-06: cancel a scheduled future flight', description: 'Terminal. The flight is hidden from search; the bookings module expires pending holds, cancels Confirmed bookings with a 100% refund (PAY-03), releases seats and notifies passengers. Returns 503 if some refunds could not start; repeat the call to retry them. Departed flights return 409.' })
   @ApiCreatedResponse({ schema: cancelResponse })
   cancel(@CurrentUser() user: AuthUser, @Param('id', ParseObjectIdPipe) id: string) { return this.flights.cancelFlight(user, id); }
 
   @Roles(Role.AirlineModerator) @Get(':id/bookings')
-  @ApiOperation({ summary: 'FLT-29: list bookings for an assigned-airline flight', description: 'Read-only flight_bookings projection; newest first, ID tie-breaker. Creation dates are inclusive UTC days.' })
+  @ApiOperation({ summary: 'FLT-29: list bookings for an assigned-airline flight', description: 'Confirmed, completed and cancelled bookings (reference, passenger names, cabin, seats, status); newest first. Seats remaining per cabin are on GET /flights/:id. Creation dates are inclusive UTC days.' })
   @ApiOkResponse({ schema: pageResponse(bookingResponse) })
   bookings(@CurrentUser() user: AuthUser, @Param('id', ParseObjectIdPipe) id: string, @Query() q: FlightBookingQueryDto) { return this.flights.listBookings(user, id, q); }
 
