@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { HydratedDocument, Types } from 'mongoose';
+import { HydratedDocument, Types, Schema as MongooseSchema } from 'mongoose';
 
 /** GEN-01 notification kinds. Add new ones here rather than using free text. */
 export enum NotificationType {
@@ -20,7 +20,7 @@ export enum NotificationType {
 
 @Schema({ timestamps: true, collection: 'notifications' })
 export class Notification {
-  @Prop({ type: Types.ObjectId, ref: 'User', required: true, index: true })
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'User', required: true, index: true })
   userId: Types.ObjectId;
 
   @Prop({ type: String, enum: Object.values(NotificationType), required: true })

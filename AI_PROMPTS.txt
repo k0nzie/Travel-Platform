@@ -1,0 +1,69 @@
+================================================
+Date: 2026-10-30
+Student: Ahmed Hisham
+Tool: Hermes Agent (Claude)
+Related Requirement: FLT-01..FLT-30 (Person 2: airlines, flights, search)
+Prompt: Implement the Person 2 module in backend/src/modules/flights: Airline and Flight schemas with embedded cabins, baggagePolicy and cancellationTiers; admin airline creation; moderator-scoped airline/flight create, edit, cancel; atomic reserveSeats/releaseSeats/convertHeldToBooked for Person 3; pure computeRefundPercent; one-way and round-trip local-date search with sorting and pagination; flight details; moderator booking list and CSV export; seed data. TDD, no live Mongo needed, npm test / lint / tsc must pass.
+How the output was used: Generated the flights module, tests and seed script; reviewed the diff, ran npm test, npm run lint and npx tsc --noEmit, and kept the result.
+================================================
+
+================================================
+Date: 2026-10-31
+Student: Ahmed Hisham
+Tool: Hermes Agent (Claude)
+Related Requirement: FLT-03, FLT-04, FLT-05, FLT-06, FLT-08, FLT-09, FLT-11
+Prompt: Rework Person 2: move baggage and cancellation policies to the Airline (PUT /api/airlines/:id/baggage-policy and /cancellation-policy); add Airline.status active|suspended and filter search to Scheduled flights of active airlines; add Premium Economy and strictly positive capacity/price/max-kg rules; restrict PATCH /api/flights/:id; add POST /api/flights/:id/cabins and PATCH /api/flights/:id/cabins/:cabinId; reject duplicate flight number per airline per departure day; FLT-06 cancellation handoff to Person 3.
+How the output was used: Applied the rework, reviewed the diff and verified with the test, lint and typecheck gates.
+================================================
+
+================================================
+Date: 2026-10-31
+Student: Ahmed Hisham
+Tool: Hermes Agent (Claude)
+Related Requirement: FLT-03, FLT-06, FLT-26, FLT-29, GEN-11
+Prompt: Fix Person 2 integration issues: use the shared BookingStatus enum (lowercase values) instead of custom PascalCase booking statuses; replace the @Optional injected cancellation handler with a register-callback FlightHooksService that Person 3 can call; make the duplicate flight check use the origin-local departure date; add releaseBookedSeats for FLT-26; add /flights/:id/passengers/export alias; make the seed backfill airline status and policies; reformat AI_PROMPTS.txt per section 11.1.
+How the output was used: Applied the changes, updated the tests, and verified with npm test, npm run lint and npx tsc --noEmit.
+================================================
+
+================================================
+Date: 2026-10-31
+Student: Ahmed Hisham
+Tool: Hermes Agent (Claude)
+Related Requirement: GEN-05, FLT-03, FLT-05, FLT-11, FLT-29
+Prompt: Fix the cross-module Mongoose ObjectId schema bug: replace every @Prop({ type: Types.ObjectId }) declaration in the affected schemas with MongooseSchema.Types.ObjectId while preserving refs, required/index options and TypeScript types; add regression coverage for flight search and schedule notifications; then add safe migration support for legacy string airlineId values, converting only valid IDs that reference an existing airline, preserving inventory and unrelated fields, aborting unresolved conflicts, and keeping dry-run write-free and idempotent.
+How the output was used: Updated the eight affected schema files, added ObjectId casting and migration regression tests, and verified the migration behavior without modifying Atlas data.
+================================================
+================================================
+Date: 2026-11-02
+Student: Kenzie (team leader)
+Tool: Claude
+Related Requirement: FLT-05, FLT-06, FLT-12, FLT-22, FLT-23, FLT-25, FLT-26, FLT-29, FLT-30, PAY-01, PAY-02, PAY-03
+Prompt:
+Review Person 2 (flights) and Person 3 (flight booking + payments) against the requirements and
+our architecture, then fix the issues and the contradictions between the two modules, prioritising
+the requirements, efficiency and architecture.
+How the output was used:
+Made the bookings module the single owner of flight_bookings: removed Person 2's FlightBookingView
+and direct writes, and replaced them with a FlightBookingsBridge that FlightsService calls for
+FLT-05, FLT-06 and FLT-29. Replaced the stub inventory with FlightsInventoryAdapter over the real
+FlightsService (cent conversion, child/infant fares, per-cabin baggage, tier shape, transaction
+sessions). Fixed the remaining Types.ObjectId schema props, the round-trip refund rule (outbound
+tier), the FLT-30 status set, refunds on payments that arrive after a flight is cancelled, and added
+the official PAY-02/PAY-01/PAY-03 endpoints. Updated the unit and e2e tests and the P3 guide.
+================================================
+================================================
+Date: 2026-11-02
+Student: Kenzie (team leader)
+Tool: Claude
+Related Requirement: GEN-13, PAY-04, HTL-10 (conventions for all modules)
+Prompt:
+Is the project architecture good or messy, and can it be improved? Then: apply the formatting,
+id-normalisation, single hook pattern and develop-branch improvements, and write the conventions
+for the next person (Person 4, hotels).
+How the output was used:
+Added Prettier (one code style) and formatted the backend; added a global interceptor so every
+response uses `id` instead of `_id`/`__v`; moved the payment handler registry into
+PaymentHooksService so all three cross-module hooks follow one pattern; moved the shared
+cancellation-tier rules to common/; gave payment responses explicit types (fixed a TypeScript
+out-of-memory); extended docs/CONVENTIONS.md and wrote docs/P4_HOTELS_GUIDE.md.
+================================================

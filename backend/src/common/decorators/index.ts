@@ -23,9 +23,7 @@ export const Roles = (...roles: Role[]) => SetMetadata(ROLES_KEY, roles);
 export const AllowPendingPasswordChange = () => SetMetadata(ALLOW_PENDING_PASSWORD_KEY, true);
 
 /** Injects the authenticated user (or undefined on a public route with no session). */
-export const CurrentUser = createParamDecorator(
-  (field: keyof AuthUser | undefined, ctx: ExecutionContext) => {
-    const user: AuthUser | undefined = ctx.switchToHttp().getRequest().user;
-    return field ? user?.[field] : user;
-  },
-);
+export const CurrentUser = createParamDecorator((field: keyof AuthUser | undefined, ctx: ExecutionContext) => {
+  const user: AuthUser | undefined = ctx.switchToHttp().getRequest().user;
+  return field ? user?.[field] : user;
+});

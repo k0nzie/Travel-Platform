@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { HydratedDocument, Types } from 'mongoose';
+import { HydratedDocument, Types, Schema as MongooseSchema } from 'mongoose';
 
 /** What an image belongs to. Each has its own limit (GEN-08). */
 export enum MediaOwnerType {
@@ -21,7 +21,7 @@ export class Media {
   @Prop({ type: String, enum: Object.values(MediaOwnerType), required: true })
   ownerType: MediaOwnerType;
 
-  @Prop({ type: Types.ObjectId, required: true })
+  @Prop({ type: MongooseSchema.Types.ObjectId, required: true })
   ownerId: Types.ObjectId;
 
   /** Public URL path, e.g. "/uploads/post/6f1c...e2.jpg" */
@@ -41,7 +41,7 @@ export class Media {
   @Prop({ required: true })
   size: number;
 
-  @Prop({ type: Types.ObjectId, ref: 'User', required: true })
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'User', required: true })
   uploadedBy: Types.ObjectId;
 
   createdAt?: Date;

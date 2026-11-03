@@ -92,7 +92,10 @@ export class ReferenceDataService {
 
   /** ITN-26: all airports serving a city. */
   airportsInCity(cityId: string | Types.ObjectId) {
-    return this.airportModel.find({ cityId: new Types.ObjectId(String(cityId)) }).lean().exec();
+    return this.airportModel
+      .find({ cityId: new Types.ObjectId(String(cityId)) })
+      .lean()
+      .exec();
   }
 
   async getCityById(id: string | Types.ObjectId) {

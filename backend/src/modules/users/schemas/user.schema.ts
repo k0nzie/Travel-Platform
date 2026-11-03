@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { HydratedDocument, Types } from 'mongoose';
+import { HydratedDocument, Types, Schema as MongooseSchema } from 'mongoose';
 import { AccountStatus, ProviderType, Role } from '../../../common/constants/enums';
 
 /** Embedded: a moderator manages exactly one provider (ACC-13). */
@@ -9,7 +9,7 @@ export class ModeratorAssignment {
   providerType: ProviderType;
 
   /** Airline or Hotel _id. Ref is resolved by providerType, so no static `ref`. */
-  @Prop({ type: Types.ObjectId, required: true })
+  @Prop({ type: MongooseSchema.Types.ObjectId, required: true })
   providerId: Types.ObjectId;
 }
 const ModeratorAssignmentSchema = SchemaFactory.createForClass(ModeratorAssignment);

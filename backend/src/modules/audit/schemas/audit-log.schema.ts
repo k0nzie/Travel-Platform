@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { HydratedDocument, Types } from 'mongoose';
+import { HydratedDocument, Types, Schema as MongooseSchema } from 'mongoose';
 
 /** Add new actions here as features are built (GEN-07). */
 export enum AuditAction {
@@ -21,7 +21,7 @@ export enum AuditAction {
 
 @Schema({ timestamps: { createdAt: true, updatedAt: false }, collection: 'audit_logs' })
 export class AuditLog {
-  @Prop({ type: Types.ObjectId, ref: 'User', required: true, index: true })
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'User', required: true, index: true })
   actorId: Types.ObjectId;
 
   @Prop({ required: true })
@@ -34,7 +34,7 @@ export class AuditLog {
   @Prop({ required: true, index: true })
   targetType: string;
 
-  @Prop({ type: Types.ObjectId, required: true, index: true })
+  @Prop({ type: MongooseSchema.Types.ObjectId, required: true, index: true })
   targetId: Types.ObjectId;
 
   @Prop({ maxlength: 1000 })
