@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { HydratedDocument, Types } from 'mongoose';
+import { HydratedDocument, Types, Schema as MongooseSchema } from 'mongoose';
 
 /**
  * Read-only reference data seeded at setup (GEN-12, FLT-02).
@@ -33,7 +33,7 @@ export class City {
   @Prop({ required: true, uppercase: true, index: true })
   countryCode: string;
 
-  @Prop({ type: Types.ObjectId, ref: 'Country', required: true, index: true })
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Country', required: true, index: true })
   countryId: Types.ObjectId;
 
   @Prop()
@@ -61,7 +61,7 @@ export class Airport {
   @Prop({ required: true, trim: true })
   name: string;
 
-  @Prop({ type: Types.ObjectId, ref: 'City', required: true, index: true })
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'City', required: true, index: true })
   cityId: Types.ObjectId;
 
   @Prop({ required: true })
@@ -100,7 +100,7 @@ export class Attraction {
   @Prop({ required: true, trim: true })
   name: string;
 
-  @Prop({ type: Types.ObjectId, ref: 'City', index: true })
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'City', index: true })
   cityId?: Types.ObjectId;
 
   @Prop()

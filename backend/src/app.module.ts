@@ -1,9 +1,11 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { APP_INTERCEPTOR } from '@nestjs/core';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ServeStaticModule } from '@nestjs/serve-static';
 import { resolve } from 'path';
+import { SerializeIdsInterceptor } from './common/interceptors/serialize-ids.interceptor';
 import configuration from './config/configuration';
 import { validateEnv } from './config/env.validation';
 import { HealthController } from './health.controller';
@@ -15,6 +17,7 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
 import { PaymentsModule } from './modules/payments/payments.module';
 import { ReferenceDataModule } from './modules/reference-data/reference-data.module';
 import { UsersModule } from './modules/users/users.module';
+import { FlightsModule } from './modules/flights/flights.module';
 
 @Module({
   imports: [
@@ -41,9 +44,9 @@ import { UsersModule } from './modules/users/users.module';
     AuthModule,
 
     // ---- Teammates add their modules below ----
-    // FlightsModule,          // Person 2
-    FlightBookingsModule,      // Person 3
-    PaymentsModule,            // Person 3
+    FlightsModule, // Person 2
+    FlightBookingsModule, // Person 3
+    PaymentsModule, // Person 3
     // HotelsModule,           // Person 4
     // HotelBookingsModule,    // Person 4
     // ItinerariesModule,      // Person 5
@@ -53,5 +56,7 @@ import { UsersModule } from './modules/users/users.module';
     // AdminModule,            // Person 6
   ],
   controllers: [HealthController],
+  // Every response uses `id`, never `_id` / `__v` (see docs/CONVENTIONS.md).
+  providers: [{ provide: APP_INTERCEPTOR, useClass: SerializeIdsInterceptor }],
 })
 export class AppModule {}

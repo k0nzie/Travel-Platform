@@ -15,8 +15,11 @@ cd backend
 npm install
 cp .env.example .env        # fill MONGODB_URI, JWT_ACCESS_SECRET, ADMIN_EMAIL, ADMIN_PASSWORD
 npm run seed                # reference data (countries, cities, airports, currencies, attractions) + admin
+npm run seed:flights       # Person 2: migrate legacy flights/airlines, then insert sample data (run `npm run seed` first)
 npm run start:dev
 ```
+
+`seed:flights` is idempotent. It first normalizes legacy `status`/cabin casing, adds missing cabin `_id`s, backfills `departureDay` and airline `status`/baggage/cancellation policy, keeping `held`/`booked` counts. It then inserts sample rows only if absent. Preview with `npm run seed:flights -- --dry-run` (or `SEED_DRY_RUN=1`): prints the migration report, writes nothing. Rerun if the report lists `conflicts`.
 
 - API: http://localhost:4000/api
 - Swagger UI: http://localhost:4000/api/docs
@@ -42,14 +45,16 @@ npm run start:dev
 
 ## Implemented so far (Person 3 — flight booking and payments)
 
-Runs against stub flights until Person 2's module is merged; see the integration guide.
-Test with `npm run test:bookings`.
+Integrated with Person 2's real flights through `FlightsInventoryAdapter`; see [docs/P3_BOOKING_PAYMENTS.md](docs/P3_BOOKING_PAYMENTS.md).
+Test with `npm run test:bookings` (end to end, includes the flights integration).
 
 | Area | Endpoints | Requirements |
 |---|---|---|
-| Booking | `POST /flight-bookings/quote`, `POST /flight-bookings`, `GET /flight-bookings`, `GET /flight-bookings/:id` | FLT-12, 19, 21, 22, 23, 26 |
-| Tickets and cancelling | `GET /flight-bookings/:id/e-ticket`, `GET /flight-bookings/:id/cancellation-preview`, `POST /flight-bookings/:id/cancel` | FLT-25, 26, PAY-03 |
-| Payments | `GET /payments/checkout/:type/:bookingId`, `POST /payments/intent`, `POST /payments/webhook`, `GET /payments/:id`, `POST /payments/:id/sync`, `POST /payments/:id/test-confirm` | PAY-01 to 04, GEN-11 |
+| Booking | `POST /flight-bookings` (summary), `POST /flight-bookings/hold`, `GET /flight-bookings`, `GET /flight-bookings/:id` | FLT-12, 19, 21, 22, 25 |
+| Tickets and cancelling | `GET /flight-bookings/:id/e-ticket`, `GET /flight-bookings/:id/cancellation-preview`, `POST /flight-bookings/:id/cancel` | FLT-23, 26, PAY-03 |
+| Policies | `GET /bookings/:type/:id/policies`, `POST /bookings/:type/:id/accept-policies` | PAY-02 |
+| Payments | `POST /payments`, `POST /payments/:id/retry`, `GET /payments/:id`, `POST /payments/webhook`, `POST /payments/:id/sync`, `POST /payments/:id/test-confirm` | PAY-01, 04, GEN-11 |
+| Refunds | `GET /refunds/:id` | PAY-03 |
 
 ### Auth design (for the discussion)
 

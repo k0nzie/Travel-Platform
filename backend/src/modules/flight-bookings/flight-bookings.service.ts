@@ -14,28 +14,28 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { randomInt } from 'crypto';
 import { DateTime } from 'luxon';
 import { ClientSession, Connection, FilterQuery, Model, Types } from 'mongoose';
-import { BookingStatus, BookingType, canTransition, ProviderType } from '../../common/constants/enums';
+import { BookingStatus, BookingType, canTransition } from '../../common/constants/enums';
 import { AuthUser } from '../../common/interfaces/auth-user.interface';
-import { assertModerates, assertOwner, sameId } from '../../common/utils/access.util';
-import { paginate } from '../../common/utils/paginate';
-import { daysUntil, parseDateOnly, utcToLocalIso } from '../../common/utils/time.util';
+import { assertOwner, sameId } from '../../common/utils/access.util';
+import { escapeRegex, paginate } from '../../common/utils/paginate';
+import { daysUntil, localDayRangeUtc, parseDateOnly, utcToLocalIso } from '../../common/utils/time.util';
+import { FlightBookingQueryDto as StaffBookingQueryDto } from '../flights/dto/flights.dto';
+import {
+  FlightBookingRow,
+  FlightBookingsBridge,
+  FlightCancellationResult,
+  FlightHooksService,
+} from '../flights/flight-hooks.service';
 import { NotificationType } from '../notifications/schemas/notification.schema';
 import { NotificationsService } from '../notifications/notifications.service';
-import {
-  BookingConfirmationHandler,
-  BookingPaymentContext,
-} from '../payments/booking-confirmation-handler.interface';
+import { BookingConfirmationHandler, BookingPaymentContext } from '../payments/booking-confirmation-handler.interface';
+import { PaymentHooksService } from '../payments/payment-hooks.service';
 import { PaymentsService } from '../payments/payments.service';
 import { ReferenceDataService } from '../reference-data/reference-data.service';
 import { AccountHooksService } from '../users/account-hooks.service';
 import { CreateFlightBookingDto, FlightBookingQueryDto, PassengerDto } from './dto/flight-booking.dto';
 import { ETicketService } from './e-ticket.service';
-import {
-  FLIGHT_INVENTORY,
-  FlightInventoryPort,
-  FlightSnapshot,
-  PassengerType,
-} from './ports/flight-inventory.port';
+import { FLIGHT_INVENTORY, FlightInventoryPort, FlightSnapshot, PassengerType } from './ports/flight-inventory.port';
 import { BookingLeg, FlightBooking, FlightBookingDocument } from './schemas/flight-booking.schema';
 
 const HOLD_MINUTES = 10; // FLT-22
@@ -48,8 +48,18 @@ const JOB_BATCH = 200;
 /** Never leaves the service in lists shown to moderators or admins. */
 const STAFF_SAFE_SELECT = '-passengers.passportNumber -passengers.dateOfBirth';
 
+type StaffBookingDoc = Pick<
+  FlightBooking,
+  'reference' | 'legs' | 'passengers' | 'seatCount' | 'status' | 'createdAt'
+> & {
+  _id: Types.ObjectId;
+};
+
+/** Seat counters disagree with the booking (e.g. the flight was cancelled mid-payment). */
+class SeatMoveError extends Error {}
+
 @Injectable()
-export class FlightBookingsService implements OnModuleInit, BookingConfirmationHandler {
+export class FlightBookingsService implements OnModuleInit, BookingConfirmationHandler, FlightBookingsBridge {
   private readonly logger = new Logger(FlightBookingsService.name);
 
   constructor(
@@ -62,10 +72,15 @@ export class FlightBookingsService implements OnModuleInit, BookingConfirmationH
     private readonly referenceData: ReferenceDataService,
     private readonly eTickets: ETicketService,
     private readonly config: ConfigService,
+    private readonly flightHooks: FlightHooksService,
+    private readonly paymentHooks: PaymentHooksService,
   ) {}
 
   onModuleInit() {
-    this.payments.registerHandler(BookingType.Flight, this);
+    // Cross-module hooks (docs/CONVENTIONS.md): payments, flights and accounts call back into bookings.
+    this.paymentHooks.register(BookingType.Flight, this);
+    // FLT-05, FLT-06, FLT-29: flights calls back through this bridge instead of touching bookings.
+    this.flightHooks.register(this);
     // ACC-12: flights still ahead, or under way, block deactivation.
     this.hooks.registerDeactivationCheck('flight-bookings', async (userId) => {
       const count = await this.bookingModel
@@ -138,7 +153,7 @@ export class FlightBookingsService implements OnModuleInit, BookingConfirmationH
         });
       }
 
-      const policy = flight.baggagePolicy;
+      const policy = cabin.baggagePolicy;
       dto.passengers.forEach((p, n) => {
         if ((p.extraBags ?? 0) > policy.maxExtraBagsPerPassenger) {
           throw new BadRequestException({
@@ -225,11 +240,7 @@ export class FlightBookingsService implements OnModuleInit, BookingConfirmationH
       if (born > DateTime.utc()) throw fail(`passengers.${i}.dateOfBirth`, 'Date of birth is in the future');
       const age = Math.floor(departure.diff(born, 'years').years);
       const actual =
-        age >= ADULT_MIN_AGE
-          ? PassengerType.Adult
-          : age >= CHILD_MIN_AGE
-            ? PassengerType.Child
-            : PassengerType.Infant;
+        age >= ADULT_MIN_AGE ? PassengerType.Adult : age >= CHILD_MIN_AGE ? PassengerType.Child : PassengerType.Infant;
       if (actual !== p.type) {
         throw fail(`passengers.${i}.type`, `Passenger is ${age} at departure, which is a ${actual} fare`);
       }
@@ -277,8 +288,8 @@ export class FlightBookingsService implements OnModuleInit, BookingConfirmationH
     for (const leg of booking.legs) {
       const ok = await this.inventory[seatMove](String(leg.flightId), leg.cabinClass, booking.seatCount, session);
       if (!ok) {
-        // Counters disagree with the booking; abort rather than silently drift.
-        throw new InternalServerErrorException(`${seatMove} failed for booking ${booking.reference}`);
+        // Counters disagree with the booking; abort the transaction rather than silently drift.
+        throw new SeatMoveError(`${seatMove} failed for booking ${booking.reference}`);
       }
     }
   }
@@ -319,7 +330,34 @@ export class FlightBookingsService implements OnModuleInit, BookingConfirmationH
 
   async onPaymentSucceeded(bookingId: string, paymentId: string) {
     const paymentObjectId = new Types.ObjectId(paymentId);
-    const confirmed = await this.connection.transaction(async (session) => {
+    const confirmed = await this.confirmPaid(bookingId, paymentObjectId).catch(async (err) => {
+      if (!(err instanceof SeatMoveError)) throw err;
+      // The flight stopped being bookable while the customer paid (cancelled or departed):
+      // release the hold; returning false makes PaymentsService refund in full.
+      this.logger.warn(`Payment for booking ${bookingId} arrived but seats could not be issued: ${err.message}`);
+      await this.expireOne(new Types.ObjectId(bookingId));
+      return null;
+    });
+
+    if (!confirmed) {
+      // Redelivered webhook for a payment already applied, or genuinely too late.
+      const existing = await this.bookingModel.findById(bookingId).select('paymentId status').lean().exec();
+      return existing?.status !== BookingStatus.Expired && sameId(existing?.paymentId, paymentObjectId);
+    }
+
+    await this.notifications.notify(confirmed.userId, {
+      type: NotificationType.BookingConfirmed,
+      title: 'Flight booking confirmed',
+      message: `Your booking ${confirmed.reference} is confirmed. Your e-ticket is ready to download.`,
+      link: this.link(confirmed),
+      data: { bookingId: String(confirmed._id), reference: confirmed.reference },
+    });
+    return true;
+  }
+
+  /** PendingPayment -> Confirmed and held -> booked seats, in one transaction (FLT-23). */
+  private confirmPaid(bookingId: string, paymentObjectId: Types.ObjectId) {
+    return this.connection.transaction(async (session) => {
       const booking = await this.bookingModel.findById(bookingId).session(session).exec();
       if (booking?.status !== BookingStatus.PendingPayment) return null;
 
@@ -344,37 +382,26 @@ export class FlightBookingsService implements OnModuleInit, BookingConfirmationH
       if (updated) await this.eachLeg(updated, 'convertHeldToBooked', session);
       return updated;
     });
-
-    if (!confirmed) {
-      // Redelivered webhook for a payment already applied, or genuinely too late.
-      const existing = await this.bookingModel.findById(bookingId).select('paymentId').lean().exec();
-      return sameId(existing?.paymentId, paymentObjectId);
-    }
-
-    await this.notifications.notify(confirmed.userId, {
-      type: NotificationType.BookingConfirmed,
-      title: 'Flight booking confirmed',
-      message: `Your booking ${confirmed.reference} is confirmed. Your e-ticket is ready to download.`,
-      link: this.link(confirmed),
-      data: { bookingId: String(confirmed._id), reference: confirmed.reference },
-    });
-    return true;
   }
 
   // ---------- my bookings ----------
 
-  /** FLT-26 */
+  /** FLT-25: grouped as Upcoming, Past and Cancelled via `scope`. */
   list(user: AuthUser, query: FlightBookingQueryDto) {
     const filter: FilterQuery<FlightBooking> = { userId: new Types.ObjectId(user.id) };
     if (query.status) filter.status = query.status;
+    const now = new Date();
     if (query.scope === 'upcoming') {
-      filter.departureAt = { $gt: new Date() };
+      filter.departureAt = { $gt: now };
       filter.status ??= { $in: [BookingStatus.PendingPayment, BookingStatus.Confirmed] };
     } else if (query.scope === 'past') {
+      filter.status ??= { $in: [BookingStatus.Confirmed, BookingStatus.Completed, BookingStatus.Expired] };
       filter.$or = [
-        { departureAt: { $lte: new Date() } },
-        { status: { $in: [BookingStatus.Completed, BookingStatus.Expired, BookingStatus.Cancelled] } },
+        { departureAt: { $lte: now } },
+        { status: { $in: [BookingStatus.Completed, BookingStatus.Expired] } },
       ];
+    } else if (query.scope === 'cancelled') {
+      filter.status = BookingStatus.Cancelled;
     }
     return paginate(this.bookingModel, filter, {
       page: query.page,
@@ -384,8 +411,10 @@ export class FlightBookingsService implements OnModuleInit, BookingConfirmationH
     });
   }
 
+  /** FLT-25 details, with payment and refund status (PAY-03). */
   async getOne(user: AuthUser, id: string) {
-    return this.toView(await this.loadOwned(user, id));
+    const booking = await this.loadOwned(user, id);
+    return { ...this.toView(booking), payment: await this.payments.summaryForBooking(BookingType.Flight, booking._id) };
   }
 
   private async loadOwned(user: AuthUser, id: string, opts: { allowAdmin?: boolean } = { allowAdmin: true }) {
@@ -395,7 +424,7 @@ export class FlightBookingsService implements OnModuleInit, BookingConfirmationH
     return booking;
   }
 
-  /** FLT-25 */
+  /** FLT-23 */
   async eTicket(user: AuthUser, id: string) {
     const booking = await this.loadOwned(user, id);
     if (![BookingStatus.Confirmed, BookingStatus.Completed].includes(booking.status)) {
@@ -409,21 +438,23 @@ export class FlightBookingsService implements OnModuleInit, BookingConfirmationH
 
   // ---------- cancellation ----------
 
-  /** FLT-09: each leg refunds under its own tiers, using the days left until that leg. */
+  /**
+   * FLT-26 / FLT-12a: the booking is cancelled as a whole. The refund uses the outbound
+   * segment's tier (FLT-09, highest threshold not exceeding the days left before the
+   * outbound departure) applied to the full amount paid, baggage included.
+   */
   private computeRefund(booking: FlightBookingDocument) {
-    const legs = booking.legs.map((leg) => {
-      const daysRemaining = daysUntil(leg.departureAt);
-      const refundPercent = this.inventory.computeRefundPercent(leg.cancellationTiers, daysRemaining);
-      const paidMinor = leg.fareMinor + leg.baggageMinor;
-      return {
-        flightNumber: leg.flightNumber,
-        daysRemaining,
-        refundPercent,
-        paidMinor,
-        refundMinor: Math.round((paidMinor * refundPercent) / 100),
-      };
-    });
-    return { legs, refundMinor: legs.reduce((sum, leg) => sum + leg.refundMinor, 0), currency: booking.currency };
+    const outbound = booking.legs[0];
+    const daysRemaining = daysUntil(outbound.departureAt);
+    const refundPercent = this.inventory.computeRefundPercent(outbound.cancellationTiers, daysRemaining);
+    return {
+      flightNumber: outbound.flightNumber,
+      daysRemaining,
+      refundPercent,
+      paidMinor: booking.totalMinor,
+      refundMinor: Math.round((booking.totalMinor * refundPercent) / 100),
+      currency: booking.currency,
+    };
   }
 
   private assertCancellable(booking: FlightBookingDocument) {
@@ -496,7 +527,10 @@ export class FlightBookingsService implements OnModuleInit, BookingConfirmationH
       );
       if (cancellation.refundMinor > 0 && !refundRecord) {
         // Booking confirmed but its payment isn't marked paid yet. Roll back, never lose a refund.
-        throw new ConflictException({ message: 'Your payment is still settling. Try again shortly.', code: 'PAYMENT_SETTLING' });
+        throw new ConflictException({
+          message: 'Your payment is still settling. Try again shortly.',
+          code: 'PAYMENT_SETTLING',
+        });
       }
       return updated;
     });
@@ -522,7 +556,7 @@ export class FlightBookingsService implements OnModuleInit, BookingConfirmationH
     }
   }
 
-  private async expireOne(id: Types.ObjectId, filter: FilterQuery<FlightBooking> = {}) {
+  private async expireOne(id: Types.ObjectId, filter: FilterQuery<FlightBooking> = {}, flightCancelled = false) {
     const expired = await this.connection.transaction(async (session) => {
       const updated = await this.moveStatus(
         id,
@@ -537,13 +571,25 @@ export class FlightBookingsService implements OnModuleInit, BookingConfirmationH
     if (!expired) return;
 
     await this.payments.cancelOpenIntent(BookingType.Flight, id);
-    await this.notifications.notify(expired.userId, {
-      type: NotificationType.BookingExpired,
-      title: 'Booking hold expired',
-      message: `Booking ${expired.reference} was not paid within ${HOLD_MINUTES} minutes and has expired.`,
-      link: this.link(expired),
-      data: { bookingId: String(expired._id), reference: expired.reference },
-    });
+    await this.notifications.notify(
+      expired.userId,
+      flightCancelled
+        ? {
+            type: NotificationType.FlightCancelled,
+            title: 'Your flight was cancelled',
+            message: `The airline cancelled a flight on unpaid booking ${expired.reference}; the seat hold was released.`,
+            link: this.link(expired),
+            data: { bookingId: String(expired._id), reference: expired.reference },
+          }
+        : {
+            type: NotificationType.BookingExpired,
+            title: 'Booking hold expired',
+            message: `Booking ${expired.reference} was not paid within ${HOLD_MINUTES} minutes and has expired.`,
+            link: this.link(expired),
+            data: { bookingId: String(expired._id), reference: expired.reference },
+          },
+    );
+    return expired;
   }
 
   /** GEN-11: Confirmed -> Completed after the last flight lands. */
@@ -558,46 +604,46 @@ export class FlightBookingsService implements OnModuleInit, BookingConfirmationH
       .exec();
   }
 
-  // ---------- called by Person 2 (FLT-05, FLT-06, FLT-29) and Person 6 (ACC-17) ----------
+  // ---------- FlightBookingsBridge: called by FlightsService (FLT-05, FLT-06, FLT-29) ----------
 
   /**
-   * FLT-06: call after a flight is cancelled. Unpaid holds expire; confirmed
-   * bookings are cancelled with a full refund, including any other leg.
-   * `failed` lists references to run again; calling this twice is safe.
+   * FLT-06: the flight is already Cancelled. Unpaid holds expire; confirmed bookings are
+   * cancelled with a 100% refund (PAY-03), releasing seats on every leg. Safe to call again:
+   * only bookings still pending or confirmed are touched, so a retry picks up failures.
    */
-  async cancelForFlight(flightId: string, reason: string) {
+  async onFlightCancelled(flightId: string): Promise<FlightCancellationResult> {
     const bookings = await this.activeBookingsOnFlight(flightId);
-    const failed: string[] = [];
-    let cancelled = 0;
+    const result: FlightCancellationResult = { cancelled: 0, expired: 0, failed: [] };
     for (const booking of bookings) {
-      if (booking.status === BookingStatus.PendingPayment) {
-        await this.expireOne(booking._id);
-        continue;
+      try {
+        if (booking.status === BookingStatus.PendingPayment) {
+          if (await this.expireOne(booking._id, {}, true)) result.expired++;
+          continue;
+        }
+        const done = await this.cancelConfirmed(booking, {
+          cancelledBy: 'airline',
+          refundMinor: booking.totalMinor,
+          reason: 'Flight cancelled by the airline',
+        });
+        if (!done) continue;
+        result.cancelled++;
+        await this.notifications.notify(done.userId, {
+          type: NotificationType.FlightCancelled,
+          title: 'Your flight was cancelled',
+          message: `The airline cancelled a flight on booking ${done.reference}. You will receive a full refund.`,
+          link: this.link(done),
+          data: { bookingId: String(done._id), reference: done.reference },
+        });
+      } catch (err) {
+        result.failed.push(booking.reference);
+        this.logger.error(`Could not cancel booking ${booking.reference}: ${(err as Error).message}`);
       }
-      const done = await this.cancelConfirmed(booking, {
-        cancelledBy: 'airline',
-        refundMinor: booking.totalMinor,
-        reason,
-      }).catch((err) => {
-        failed.push(booking.reference);
-        this.logger.error(`Could not cancel booking ${booking.reference}: ${err.message}`);
-        return null;
-      });
-      if (!done) continue;
-      cancelled++;
-      await this.notifications.notify(done.userId, {
-        type: NotificationType.FlightCancelled,
-        title: 'Your flight was cancelled',
-        message: `The airline cancelled a flight on booking ${done.reference}. You will receive a full refund.`,
-        link: this.link(done),
-        data: { bookingId: String(done._id), reference: done.reference, reason },
-      });
     }
-    return { cancelled, failed };
+    return result;
   }
 
-  /** FLT-05: call after a flight's times change. Refreshes the copies and tells the travellers. */
-  async applyScheduleChange(flightId: string) {
+  /** FLT-05: refresh the booking copies of the new times; notify passengers with Confirmed bookings. */
+  async onScheduleChanged(flightId: string) {
     const flight = await this.inventory.getFlightForBooking(flightId);
     if (!flight) throw new NotFoundException('Flight not found');
 
@@ -611,17 +657,77 @@ export class FlightBookingsService implements OnModuleInit, BookingConfirmationH
       await booking.save();
     }
 
+    const confirmed = bookings.filter((b) => b.status === BookingStatus.Confirmed);
     await this.notifications.notifyMany(
-      bookings.map((b) => b.userId),
+      confirmed.map((b) => b.userId),
       {
         type: NotificationType.FlightScheduleChanged,
         title: 'Your flight schedule changed',
-        message: `Flight ${flight.flightNumber} now departs at ` +
+        message:
+          `Flight ${flight.flightNumber} now departs at ` +
           `${utcToLocalIso(flight.departureAt, flight.origin.timezone)} local time.`,
         data: { flightId },
       },
     );
     return { updated: bookings.length };
+  }
+
+  /** FLT-05: airports lock once any booking exists, whatever its status. */
+  countForFlight(flightId: string) {
+    return this.bookingModel.countDocuments({ 'legs.flightId': new Types.ObjectId(flightId) }).exec();
+  }
+
+  /** FLT-29: one row per booking on this flight. Moderator scope is checked by FlightsService. */
+  async listForFlight(flightId: string, query: StaffBookingQueryDto) {
+    const page = await paginate<StaffBookingDoc>(this.bookingModel, this.staffFilter(flightId, query), {
+      page: query.page,
+      limit: query.limit,
+      sort: { createdAt: -1, _id: -1 },
+      select: STAFF_SAFE_SELECT,
+    });
+    return { ...page, items: page.items.map((b) => this.staffRow(b, flightId)) };
+  }
+
+  /** FLT-29 CSV: the same filter, every match up to `max`. */
+  async exportForFlight(flightId: string, query: StaffBookingQueryDto, max: number) {
+    const rows = await this.bookingModel
+      .find(this.staffFilter(flightId, query))
+      .select(STAFF_SAFE_SELECT)
+      .sort({ createdAt: -1, _id: -1 })
+      .limit(max)
+      .lean()
+      .exec();
+    return (rows as unknown as StaffBookingDoc[]).map((b) => this.staffRow(b, flightId));
+  }
+
+  /** FLT-29 shows booked passengers (Confirmed or Cancelled); unpaid holds are not bookings yet. */
+  private staffFilter(flightId: string, q: StaffBookingQueryDto) {
+    const leg: Record<string, unknown> = { flightId: new Types.ObjectId(flightId) };
+    if (q.cabin) leg.cabinClass = q.cabin;
+    const filter: Record<string, any> = {
+      legs: { $elemMatch: leg },
+      status: q.status ?? { $in: [BookingStatus.Confirmed, BookingStatus.Completed, BookingStatus.Cancelled] },
+    };
+    if (q.reference) filter.reference = new RegExp(escapeRegex(q.reference), 'i');
+    if (q.from || q.to) {
+      filter.createdAt = {};
+      if (q.from) filter.createdAt.$gte = localDayRangeUtc(q.from, 'UTC').start;
+      if (q.to) filter.createdAt.$lt = localDayRangeUtc(q.to, 'UTC').end;
+    }
+    return filter;
+  }
+
+  private staffRow(booking: StaffBookingDoc, flightId: string): FlightBookingRow {
+    const leg = booking.legs.find((l) => sameId(l.flightId, flightId));
+    return {
+      id: String(booking._id),
+      reference: booking.reference,
+      passengerNames: booking.passengers.map((p) => `${p.firstName} ${p.lastName}`),
+      cabin: leg.cabinClass,
+      seats: booking.seatCount,
+      status: booking.status,
+      createdAt: booking.createdAt,
+    };
   }
 
   private activeBookingsOnFlight(flightId: string) {
@@ -631,14 +737,6 @@ export class FlightBookingsService implements OnModuleInit, BookingConfirmationH
         status: { $in: [BookingStatus.PendingPayment, BookingStatus.Confirmed] },
       })
       .exec();
-  }
-
-  /** FLT-29: Person 2 calls this for the moderator view and CSV export. */
-  listForFlight(user: AuthUser, airlineId: string, flightId: string, query: FlightBookingQueryDto) {
-    assertModerates(user, ProviderType.Airline, airlineId, { allowAdmin: true });
-    const filter: FilterQuery<FlightBooking> = { 'legs.flightId': new Types.ObjectId(flightId) };
-    if (query.status) filter.status = query.status;
-    return paginate(this.bookingModel, filter, { ...query, select: STAFF_SAFE_SELECT });
   }
 
   /** ACC-17: Person 6's read-only admin list. */
