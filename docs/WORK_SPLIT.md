@@ -51,9 +51,6 @@ and `computeRefundPercent(tiers, daysRemaining)`.
 Provides to Person 4: a generic `PaymentsService` that works with `type = flight | hotel` and a
 `BookingConfirmationHandler` interface the hotel module implements.
 
-## Person 4 — Hotels, Rooms, Hotel Booking & Reviews
-
-Start with [P4_HOTELS_GUIDE.md](P4_HOTELS_GUIDE.md).
 
 | Area | Requirements |
 |---|---|
