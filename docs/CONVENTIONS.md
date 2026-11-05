@@ -77,6 +77,7 @@ Escape user search text with `escapeRegex()` before building a RegExp.
 | `publicAuthor(user)` from `users.service.ts` | ACC-12: show "Deleted user" for deactivated authors of comments / reviews |
 | `AccountHooksService.registerDeactivationCheck(...)` (import `UsersModule`) | P3 & P4: block ACC-12 while upcoming confirmed bookings exist |
 | `PaymentHooksService.register(BookingType.X, handler)` + `PaymentsService` (import `PaymentsModule`) | P4: Stripe payment, policy acceptance and refunds for hotel bookings |
+| `AdminProvidersService` (`modules/admin/`) — add your provider to its `targets` map | ACC-15: admin (de)activates a hotel or airline; your search must hide inactive providers and booking must refuse them |
 | `computeRefundPercent(tiers, days)` / `validateTiers` from `common/utils/cancellation-tiers.ts` | FLT-09 and HTL-10 refund tiers (`{ minDays, refundPercent }`) |
 
 ## Time

@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
-import { existsSync, readFileSync } from 'fs';
+import { existsSync, readdirSync, readFileSync } from 'fs';
 import { Model } from 'mongoose';
 import { join, resolve } from 'path';
 import { Role } from '../../common/constants/enums';
@@ -18,13 +18,19 @@ import {
   CurrencyDocument,
 } from '../../modules/reference-data/schemas/reference.schemas';
 import { UsersService } from '../../modules/users/users.service';
+import { parseCsv } from './csv';
 
 type Row = Record<string, any>;
 
+/** Header names compared without case, spaces, underscores or dashes: "Country Code" = "country_code" = "countryCode". */
+const norm = (key: string) => key.toLowerCase().replace(/[\s_-]+/g, '');
+
 /** Returns the first non-empty value among several possible column names. */
 const pick = (row: Row, ...keys: string[]) => {
-  for (const key of keys) {
-    const value = row[key];
+  const wanted = keys.map(norm);
+  for (const key of wanted) {
+    const actual = Object.keys(row).find((k) => norm(k) === key);
+    const value = actual === undefined ? undefined : row[actual];
     if (value !== undefined && value !== null && String(value).trim() !== '') return value;
   }
   return undefined;
@@ -35,13 +41,15 @@ const num = (v: unknown) => (v === undefined || v === '' ? undefined : Number(v)
 /**
  * GEN-12 + ACC-18. Idempotent: safe to run many times (upserts by natural key).
  *
- * Reads JSON arrays from SEED_DATA_DIR (default ./seed-data):
- *   countries.json, cities.json, airports.json, currencies.json, attractions.json
+ * Reads the official course datasets from SEED_DATA_DIR (default ./seed-data):
+ *   Countries.csv, Cities.csv, Airports.csv, Attractions.csv   (file names are case-insensitive)
  *
- * Drop the official course datasets into that folder with those names. The loader
- * accepts common column-name variants (e.g. "iata" / "iataCode" / "code") and keeps
- * the dataset's own id in `externalId`. If the official files use different column
- * names, add them to the `pick(...)` calls below.
+ * - Airports.csv carries each airport's IANA time zone (FLT-02, GEN-06).
+ * - The supported currencies are the currency codes listed in Countries.csv (ACC-09, ITN-18, PAY-04).
+ * - Each record keeps the dataset's own id in `externalId`.
+ *
+ * A matching .json file (the old samples) is used only when the CSV is missing. Column names are
+ * matched loosely ("iata" / "IATA Code" / "iata_code"); add new variants to the `pick(...)` calls.
  */
 @Injectable()
 export class SeedService {
@@ -61,11 +69,12 @@ export class SeedService {
     const dir = resolve(process.env.SEED_DATA_DIR ?? 'seed-data');
     this.logger.log(`Reading reference data from ${dir}`);
 
-    await this.seedCurrencies(this.load(dir, 'currencies.json'));
-    const countries = await this.seedCountries(this.load(dir, 'countries.json'));
-    const cities = await this.seedCities(this.load(dir, 'cities.json'), countries);
-    await this.seedAirports(this.load(dir, 'airports.json'), cities);
-    await this.seedAttractions(this.load(dir, 'attractions.json'), cities);
+    const countryRows = this.load(dir, 'countries');
+    await this.seedCurrencies(this.currenciesFrom(countryRows, dir));
+    const countries = await this.seedCountries(countryRows);
+    const cities = await this.seedCities(this.load(dir, 'cities'), countries);
+    await this.seedAirports(this.load(dir, 'airports'), cities);
+    await this.seedAttractions(this.load(dir, 'attractions'), cities);
     await this.seedAdmin();
 
     // Make sure unique indexes exist before the app is used.
@@ -79,16 +88,46 @@ export class SeedService {
     this.logger.log('Seeding finished');
   }
 
-  private load(dir: string, file: string): Row[] {
-    const path = join(dir, file);
-    if (!existsSync(path)) {
-      this.logger.warn(`${file} not found — skipped`);
+  /** `<name>.csv` (preferred) or `<name>.json`, file name case-insensitive. */
+  private load(dir: string, name: string): Row[] {
+    const files = existsSync(dir) ? readdirSync(dir) : [];
+    const find = (ext: string) => files.find((f) => f.toLowerCase() === `${name}.${ext}`);
+    const csv = find('csv');
+    if (csv) {
+      const rows = parseCsv(readFileSync(join(dir, csv), 'utf8'));
+      this.logger.log(`${csv}: ${rows.length} rows`);
+      return rows;
+    }
+    const json = find('json');
+    if (!json) {
+      this.logger.warn(`${name}.csv not found — skipped`);
       return [];
     }
-    const parsed = JSON.parse(readFileSync(path, 'utf8'));
+    this.logger.warn(`${name}.csv not found — using sample ${json}`);
+    const parsed = JSON.parse(readFileSync(join(dir, json), 'utf8'));
     const rows = Array.isArray(parsed) ? parsed : (parsed.data ?? parsed.items ?? Object.values(parsed)[0]);
-    if (!Array.isArray(rows)) throw new Error(`${file} must contain a JSON array`);
+    if (!Array.isArray(rows)) throw new Error(`${json} must contain a JSON array`);
     return rows;
+  }
+
+  /**
+   * GEN-12: supported currencies = the currency codes in Countries.csv. A cell may hold several
+   * codes ("USD, EUR"). Falls back to the old currencies.json sample only if no country has one.
+   */
+  private currenciesFrom(countryRows: Row[], dir: string): Row[] {
+    const byCode = new Map<string, Row>();
+    for (const row of countryRows) {
+      const cell = str(pick(row, 'currency', 'currencyCode', 'currencies', 'currencyCodes', 'currencyIso'));
+      if (!cell) continue;
+      const name = str(pick(row, 'currencyName'));
+      const symbol = str(pick(row, 'currencySymbol'));
+      for (const code of cell.split(/[\s,;|/]+/).map((c) => c.trim().toUpperCase())) {
+        if (/^[A-Z]{3}$/.test(code) && !byCode.has(code)) byCode.set(code, { code, name: name ?? code, symbol });
+      }
+    }
+    if (byCode.size) return [...byCode.values()];
+    this.logger.warn('No currency column in the countries data — using the currencies sample');
+    return this.load(dir, 'currencies');
   }
 
   private async seedCurrencies(rows: Row[]) {
@@ -187,7 +226,9 @@ export class SeedService {
     for (const row of rows) {
       const iataCode = str(pick(row, 'iataCode', 'iata', 'iata_code', 'code'))?.toUpperCase();
       const city = this.findCity(row, cities);
-      const timezone = str(pick(row, 'timezone', 'timeZone', 'tz', 'tz_database_time_zone')) ?? city?.timezone;
+      const timezone =
+        str(pick(row, 'timezone', 'timeZone', 'tz', 'tz_database_time_zone', 'ianaTimezone', 'iana', 'olson')) ??
+        city?.timezone;
       if (!iataCode || !city || !timezone) {
         skipped++;
         continue;

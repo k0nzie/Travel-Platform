@@ -65,7 +65,8 @@ export class FlightsService {
 
   /** Public provider directory using the shared pagination contract. */
   listAirlines(q: PaginationQueryDto) {
-    return paginate(this.airlines, {}, { ...q, sort: { name: 1, _id: 1 } });
+    // ACC-15: deactivated airlines are hidden from public listings (their profile stays readable by id).
+    return paginate(this.airlines, { status: AirlineStatus.Active }, { ...q, sort: { name: 1, _id: 1 } });
   }
 
   /** Public profile with shared media representation. */
@@ -531,6 +532,18 @@ export class FlightsService {
     const airline = await this.airlines.create(dto);
     await this.audit.log(user, { action: AuditAction.ProviderCreated, targetType: 'airline', targetId: airline._id });
     return airline;
+  }
+
+  /**
+   * ACC-15 (admin module): activate / deactivate the airline. Returns null when it does not exist,
+   * false when it already has that status. Search and booking already filter on Active.
+   */
+  async setAirlineStatus(id: string, status: AirlineStatus) {
+    const airline = await this.airlines.findById(id).select('name status').lean().exec();
+    if (!airline) return null;
+    if (airline.status === status) return false;
+    await this.airlines.updateOne({ _id: id }, { $set: { status } }).exec();
+    return { id: String(airline._id), name: airline.name, status };
   }
 
   /** Only the assigned moderator may edit a provider. */

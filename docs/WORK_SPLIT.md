@@ -51,6 +51,7 @@ and `computeRefundPercent(tiers, daysRemaining)`.
 Provides to Person 4: a generic `PaymentsService` that works with `type = flight | hotel` and a
 `BookingConfirmationHandler` interface the hotel module implements.
 
+## Person 4 — Hotels, Rooms, Hotel Booking & Reviews
 
 | Area | Requirements |
 |---|---|
@@ -79,7 +80,8 @@ Provides to Person 4: a generic `PaymentsService` that works with `type = flight
 | Posts (draft/published), tags, images, search ranking, author page | BLG-01, BLG-02, BLG-03, BLG-04, BLG-08, BLG-09, BLG-10, BLG-12 |
 | Comments, likes | BLG-05, BLG-06, BLG-07 |
 | Reports + admin resolution (dismiss / hide / delete), hidden-content visibility | GEN-09, GEN-10 |
-| Admin: create moderators, list accounts, suspend/reactivate users, moderators and providers | ACC-13, ACC-14, ACC-15, ACC-16 |
+| Admin: create moderators, list accounts, suspend/reactivate users and moderators | ACC-13, ACC-14, ACC-15, ACC-16 |
+| Provider deactivate/reactivate: `PATCH /api/admin/providers/:type/:id/deactivate` and `/reactivate` — **already built for airlines** in `modules/admin/`; Person 4 plugs hotels in | ACC-15 |
 | Admin read-only bookings list (reads P3 + P4 collections) | ACC-17 |
 
 ---
@@ -98,3 +100,13 @@ Provides to Person 4: a generic `PaymentsService` that works with `type = flight
 - Every admin action (suspend, reactivate, delete, hide, password reset) calls `AuditService.log()`.
 - Lists use `paginate()` with page size 10 by default (GEN-05).
 - Content authored by deactivated users is hidden: filter with `UsersService.getDeactivatedUserIds()` (P5, P6).
+
+## Updates from the revised project description (Nov 2026)
+
+- **GEN-12 seeding:** use the official Countries/Cities/Airports/Attractions CSVs in `backend/seed-data/`.
+  Airports.csv carries the IANA time zone; the supported currencies are the codes in Countries.csv.
+- **ACC-15:** provider (de)activation is its own endpoint, separate from suspending the moderator's account.
+  Airlines use `active` / `inactive`. Person 4: add hotels to `AdminProvidersService` (one entry) and hide inactive
+  hotels from search and booking.
+- **Endpoint labels:** `PUT /api/hotels/:id/policies` is HTL-09, HTL-10 · `GET /api/itineraries/:id/hotels` is ITN-25 ·
+  `GET /api/posts` is BLG-02, BLG-09 · `GET /api/tags/:tag/posts` is BLG-08 · `POST /api/auth/register` is ACC-01.
