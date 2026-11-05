@@ -1,6 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsMongoId, IsOptional, IsString, Length, MaxLength } from 'class-validator';
+import { IsOptional, IsString, Length, MaxLength } from 'class-validator';
 import { PaginationQueryDto } from '../../../common/dto/pagination.dto';
 
 const upper = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim().toUpperCase() : value);
@@ -35,9 +35,10 @@ export class AirportQueryDto extends PaginationQueryDto {
   @MaxLength(100)
   q?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ example: 'cairo', description: 'Official city_id (e.g. "cairo") or the city _id' })
   @IsOptional()
-  @IsMongoId()
+  @IsString()
+  @MaxLength(64)
   cityId?: string;
 
   @ApiPropertyOptional({ example: 'EG' })
@@ -49,9 +50,10 @@ export class AirportQueryDto extends PaginationQueryDto {
 }
 
 export class AttractionQueryDto extends PaginationQueryDto {
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ example: 'cairo', description: 'Official city_id (e.g. "cairo") or the city _id' })
   @IsOptional()
-  @IsMongoId()
+  @IsString()
+  @MaxLength(64)
   cityId?: string;
 
   @ApiPropertyOptional({ example: 'EG' })

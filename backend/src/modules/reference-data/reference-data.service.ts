@@ -50,9 +50,9 @@ export class ReferenceDataService {
     return paginate(this.cityModel, filter, { page: query.page, limit: query.limit, sort: { name: 1 } });
   }
 
-  listAirports(query: AirportQueryDto) {
+  async listAirports(query: AirportQueryDto) {
     const filter: Record<string, any> = {};
-    if (query.cityId) filter.cityId = new Types.ObjectId(query.cityId);
+    if (query.cityId) filter.cityId = (await this.resolveCity(query.cityId))._id;
     if (query.countryCode) filter.countryCode = query.countryCode;
     if (query.q) {
       const rx = new RegExp(escapeRegex(query.q), 'i');
@@ -65,9 +65,9 @@ export class ReferenceDataService {
     return this.currencyModel.find().sort({ code: 1 }).lean().exec();
   }
 
-  listAttractions(query: AttractionQueryDto) {
+  async listAttractions(query: AttractionQueryDto) {
     const filter: Record<string, any> = {};
-    if (query.cityId) filter.cityId = new Types.ObjectId(query.cityId);
+    if (query.cityId) filter.cityId = (await this.resolveCity(query.cityId))._id;
     if (query.countryCode) filter.countryCode = query.countryCode;
     if (query.q) filter.name = new RegExp(escapeRegex(query.q), 'i');
     return paginate(this.attractionModel, filter, { page: query.page, limit: query.limit, sort: { name: 1 } });
@@ -90,18 +90,38 @@ export class ReferenceDataService {
     return airport;
   }
 
-  /** ITN-26: all airports serving a city. */
-  airportsInCity(cityId: string | Types.ObjectId) {
-    return this.airportModel
-      .find({ cityId: new Types.ObjectId(String(cityId)) })
-      .lean()
-      .exec();
+  /** ITN-26: all airports serving a city (official city_id or _id). */
+  async airportsInCity(cityIdOrCode: string | Types.ObjectId) {
+    const city = await this.resolveCity(cityIdOrCode);
+    return this.airportModel.find({ cityId: city._id }).lean().exec();
   }
 
-  async getCityById(id: string | Types.ObjectId) {
-    const city = Types.ObjectId.isValid(String(id)) ? await this.cityModel.findById(id).lean().exec() : null;
-    if (!city) throw new BadRequestException(`Unknown city "${id}"`);
+  /**
+   * GEN-12: a city from the official list, by its city_id ("cairo") or its _id.
+   * Hotels (HTL-01, HTL-11) and itinerary days (ITN-05) must validate cities through this.
+   */
+  async resolveCity(idOrCode: string | Types.ObjectId) {
+    const key = String(idOrCode).trim();
+    const city = /^[a-f\d]{24}$/i.test(key)
+      ? await this.cityModel.findById(key).lean().exec()
+      : await this.cityModel.findOne({ code: key.toLowerCase() }).lean().exec();
+    if (!city) throw new BadRequestException(`Unknown city "${key}"`);
     return city;
+  }
+
+  /** Same as resolveCity (kept for existing callers). */
+  getCityById(idOrCode: string | Types.ObjectId) {
+    return this.resolveCity(idOrCode);
+  }
+
+  /** An attraction from the official list, by its attraction_id ("att-1") or its _id. */
+  async resolveAttraction(idOrCode: string | Types.ObjectId) {
+    const key = String(idOrCode).trim();
+    const attraction = /^[a-f\d]{24}$/i.test(key)
+      ? await this.attractionModel.findById(key).lean().exec()
+      : await this.attractionModel.findOne({ code: key.toLowerCase() }).lean().exec();
+    if (!attraction) throw new BadRequestException(`Unknown attraction "${key}"`);
+    return attraction;
   }
 
   async assertCountryCodes(codes: string[]) {

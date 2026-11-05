@@ -67,6 +67,7 @@ let stripe: FakeStripe;
 let bookings: any;
 let payments: any;
 let flightsService: any;
+let usersService: any;
 let airlineId: Types.ObjectId;
 let alice: string;
 let bob: string;
@@ -88,6 +89,18 @@ const api = async (path: string, opts: { cookie?: string; method?: string; body?
   }
   return { status: res.status, body: json, res };
 };
+
+const logIn = async (email: string, password: string) => {
+  const login = await api('/auth/login', { body: { email, password } });
+  assert.equal(login.status, 200, JSON.stringify(login.body));
+  return login.res.headers
+    .getSetCookie()
+    .map((c) => c.split(';')[0])
+    .join('; ');
+};
+
+/** Local calendar day of an instant at an airport (FLT-11 searches by the departure airport's day). */
+const localDay = (date: Date, timeZone: string) => date.toLocaleDateString('en-CA', { timeZone });
 
 const signUp = async (email: string) => {
   const password = 'Travel2026';
@@ -268,6 +281,7 @@ describe('flight bookings and payments', { concurrency: false }, () => {
     const { PaymentsService } = await import('../src/modules/payments/payments.service');
     const { FlightBookingsService } = await import('../src/modules/flight-bookings/flight-bookings.service');
     const { FlightsService } = await import('../src/modules/flights/flights.service');
+    const { UsersService } = await import('../src/modules/users/users.service');
 
     app = await NestFactory.create<NestExpressApplication>(AppModule, { rawBody: true, logger: false });
     app.setGlobalPrefix('api');
@@ -317,6 +331,7 @@ describe('flight bookings and payments', { concurrency: false }, () => {
     bookings = app.get(FlightBookingsService);
     payments = app.get(PaymentsService);
     flightsService = app.get(FlightsService);
+    usersService = app.get(UsersService);
     alice = await signUp('alice@example.com');
     bob = await signUp('bob@example.com');
   });
@@ -699,6 +714,66 @@ describe('flight bookings and payments', { concurrency: false }, () => {
     assert.equal(list.items[0].status, 'confirmed');
     const csv = await flightsService.bookingsCsv(moderator(), String(flights.out._id), {});
     assert.match(csv, /"Sara Hassan","Economy","1","confirmed"/);
+  });
+
+  it('ACC-15: an admin deactivates the airline: hidden from search, not bookable, confirmed bookings stay valid', async () => {
+    const password = 'Admin2026x';
+    await usersService.create({ name: 'Admin', email: 'admin-acc15@example.com', password, role: 'admin' });
+    const admin = await logIn('admin-acc15@example.com', password);
+    const mod = await usersService.create({
+      name: 'Moderator',
+      email: 'mod-acc15@example.com',
+      password,
+      role: 'airline_moderator',
+      moderatorAssignment: { providerType: 'airline', providerId: String(airlineId) },
+    });
+    const { booking } = await book(alice, oneWay(flights.out));
+    const day = localDay(flights.out.departureAt, 'Africa/Cairo');
+    const search = () => api(`/flights/search?origin=CAI&destination=DXB&departureDate=${day}`);
+    assert.ok((await search()).body.total >= 1, 'flight is listed while the airline is active');
+
+    // Only admins; unknown provider types are rejected; hotels plug in later (Person 4).
+    assert.equal(
+      (await api(`/admin/providers/airline/${airlineId}/deactivate`, { cookie: alice, method: 'PATCH' })).status,
+      403,
+    );
+    assert.equal(
+      (await api(`/admin/providers/ship/${airlineId}/deactivate`, { cookie: admin, method: 'PATCH' })).status,
+      400,
+    );
+    const hotel = await api(`/admin/providers/hotel/${airlineId}/deactivate`, { cookie: admin, method: 'PATCH' });
+    assert.equal(hotel.body.code, 'PROVIDER_TYPE_NOT_AVAILABLE');
+
+    const off = await api(`/admin/providers/airline/${airlineId}/deactivate`, {
+      cookie: admin,
+      method: 'PATCH',
+      body: { reason: 'Safety review' },
+    });
+    assert.equal(off.status, 200, JSON.stringify(off.body));
+    assert.equal(off.body.status, 'inactive');
+    assert.equal(off.body.notifiedModerators, 1);
+    const again = await api(`/admin/providers/airline/${airlineId}/deactivate`, { cookie: admin, method: 'PATCH' });
+    assert.equal(again.body.code, 'ALREADY_INACTIVE');
+
+    assert.equal((await search()).body.total, 0, 'hidden from search');
+    const blocked = await api('/flight-bookings/hold', { cookie: bob, body: oneWay(flights.out) });
+    assert.equal(blocked.status, 409);
+    assert.equal(blocked.body.code, 'FLIGHT_NOT_BOOKABLE');
+    const kept = await api(`/flight-bookings/${booking.id}`, { cookie: alice });
+    assert.equal(kept.body.status, 'confirmed', 'existing confirmed bookings remain valid');
+
+    assert.equal(
+      await db.collection('notifications').countDocuments({ userId: mod._id, type: 'provider_deactivated' }),
+      1,
+    );
+    assert.equal(
+      await db.collection('audit_logs').countDocuments({ action: 'provider.deactivated', targetId: airlineId }),
+      1,
+    );
+
+    const on = await api(`/admin/providers/airline/${airlineId}/reactivate`, { cookie: admin, method: 'PATCH' });
+    assert.equal(on.body.status, 'active');
+    assert.ok((await search()).body.total >= 1, 'listed again after reactivation');
   });
 
   it('applies a schedule change and completes finished trips', async () => {

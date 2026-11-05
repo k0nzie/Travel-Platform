@@ -9,6 +9,7 @@ import { SerializeIdsInterceptor } from './common/interceptors/serialize-ids.int
 import configuration from './config/configuration';
 import { validateEnv } from './config/env.validation';
 import { HealthController } from './health.controller';
+import { AdminModule } from './modules/admin/admin.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { FlightBookingsModule } from './modules/flight-bookings/flight-bookings.module';
@@ -53,7 +54,7 @@ import { FlightsModule } from './modules/flights/flights.module';
     // ExchangeRatesModule,    // Person 5
     // BlogModule,             // Person 6
     // ReportsModule,          // Person 6
-    // AdminModule,            // Person 6
+    AdminModule, // Person 6 (ACC-15 provider status so far)
   ],
   controllers: [HealthController],
   // Every response uses `id`, never `_id` / `__v` (see docs/CONVENTIONS.md).

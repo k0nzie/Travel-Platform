@@ -7,7 +7,7 @@ import { SeedService } from './seed.service';
 async function main() {
   const app = await NestFactory.createApplicationContext(SeedAppModule, { logger: ['log', 'warn', 'error'] });
   try {
-    await app.get(SeedService).run();
+    await app.get(SeedService).run({ replace: process.argv.includes('--replace') });
   } finally {
     await app.close();
   }

@@ -25,7 +25,7 @@ export const airlineResponse = object({
   code: text,
   countryCode: text,
   description: text,
-  status: { type: 'string', enum: ['active', 'suspended'] },
+  status: { type: 'string', enum: ['active', 'inactive'] },
   baggagePolicy: baggagePolicyResponse,
   cancellationTiers: cancellationTiersResponse,
   createdAt: date,

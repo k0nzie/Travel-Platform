@@ -10,7 +10,11 @@ const key = (v: unknown) =>
     .replace(/[\s_-]+/g, '');
 const flightStatuses = new Map(Object.values(FlightStatus).map((s) => [key(s), s]));
 const cabinTypes = new Map(Object.values(CabinType).map((c) => [key(c), c]));
-const airlineStatuses = new Map(Object.values(AirlineStatus).map((s) => [key(s), s]));
+const airlineStatuses = new Map<string, AirlineStatus>([
+  ...Object.values(AirlineStatus).map((s) => [key(s), s] as [string, AirlineStatus]),
+  // Legacy name before ACC-15 wording: a "suspended" airline is now "inactive".
+  ['suspended', AirlineStatus.Inactive],
+]);
 
 /** Pure: the $set needed to bring a legacy flight to the current shape, or null when current. Inventory is carried over, never reset. */
 export function flightPatch(flight: any, newId = () => new Types.ObjectId(), airlineIds?: Set<string>) {
