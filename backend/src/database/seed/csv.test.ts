@@ -10,6 +10,13 @@ test('parses quoted fields, escaped quotes, embedded commas/newlines, CRLF and a
   ]);
 });
 
+test('detects tab- and semicolon-separated files from the header', () => {
+  assert.deepEqual(parseCsv('code\tname\tcurrency\nEG\tEgypt\tEGP\n'), [
+    { code: 'EG', name: 'Egypt', currency: 'EGP' },
+  ]);
+  assert.deepEqual(parseCsv('code;name\nFR;France'), [{ code: 'FR', name: 'France' }]);
+});
+
 test('missing trailing cells become empty strings and an empty file gives no rows', () => {
   assert.deepEqual(parseCsv('a,b,c\n1,2'), [{ a: '1', b: '2', c: '' }]);
   assert.deepEqual(parseCsv(''), []);

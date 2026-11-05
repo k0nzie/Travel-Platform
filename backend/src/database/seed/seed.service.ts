@@ -46,7 +46,10 @@ const num = (v: unknown) => (v === undefined || v === '' ? undefined : Number(v)
  *
  * - Airports.csv carries each airport's IANA time zone (FLT-02, GEN-06).
  * - The supported currencies are the currency codes listed in Countries.csv (ACC-09, ITN-18, PAY-04).
- * - Each record keeps the dataset's own id in `externalId`.
+ * - Each record keeps the dataset's own id: City.code = city_id, Attraction.code = attraction_id.
+ *
+ * `npm run seed -- --replace` first empties the five reference collections, removing records that are
+ * not in the official files (e.g. old samples). Accounts, flights and bookings are never touched.
  *
  * A matching .json file (the old samples) is used only when the CSV is missing. Column names are
  * matched loosely ("iata" / "IATA Code" / "iata_code"); add new variants to the `pick(...)` calls.
@@ -65,9 +68,17 @@ export class SeedService {
     private readonly config: ConfigService,
   ) {}
 
-  async run() {
+  async run(options: { replace?: boolean } = {}) {
     const dir = resolve(process.env.SEED_DATA_DIR ?? 'seed-data');
     this.logger.log(`Reading reference data from ${dir}`);
+    if (options.replace) {
+      await Promise.all(
+        [this.countryModel, this.cityModel, this.airportModel, this.currencyModel, this.attractionModel].map(
+          (m: Model<any>) => m.deleteMany({}).exec(),
+        ),
+      );
+      this.logger.warn('--replace: reference collections emptied before seeding');
+    }
 
     const countryRows = this.load(dir, 'countries');
     await this.seedCurrencies(this.currenciesFrom(countryRows, dir));
@@ -145,56 +156,48 @@ export class SeedService {
     this.logger.log(`Currencies: ${n}`);
   }
 
-  /** Returns lookups by code, name and external id → country doc. */
+  /** Countries.csv: code, name, currency. Returns lookups by code and name. */
   private async seedCountries(rows: Row[]) {
     for (const row of rows) {
-      const code = str(pick(row, 'code', 'iso2', 'countryCode', 'alpha2', 'country_code'))?.toUpperCase();
+      const code = str(pick(row, 'code', 'countryCode', 'iso2', 'alpha2'))?.toUpperCase();
       const name = str(pick(row, 'name', 'countryName', 'country'));
       if (!code || !name) continue;
-      await this.countryModel.updateOne(
-        { code },
-        { code, name, externalId: str(pick(row, 'id', '_id', 'countryId')) },
-        { upsert: true },
-      );
+      await this.countryModel.updateOne({ code }, { code, name }, { upsert: true });
     }
     const all = await this.countryModel.find().lean().exec();
     const byKey = new Map<string, (typeof all)[number]>();
     for (const c of all) {
       byKey.set(c.code.toUpperCase(), c);
       byKey.set(c.name.toLowerCase(), c);
-      if (c.externalId) byKey.set(`id:${c.externalId}`, c);
     }
     this.logger.log(`Countries: ${all.length}`);
     return byKey;
   }
 
   private findCountry(row: Row, countries: Map<string, any>) {
-    const ext = str(pick(row, 'countryId', 'country_id'));
     const code = str(pick(row, 'countryCode', 'country_code', 'iso2'));
     const name = str(pick(row, 'country', 'countryName'));
-    return (
-      (ext && countries.get(`id:${ext}`)) ||
-      (code && countries.get(code.toUpperCase())) ||
-      (name && (countries.get(name.toUpperCase()) || countries.get(name.toLowerCase())))
-    );
+    return (code && countries.get(code.toUpperCase())) || (name && countries.get(name.toLowerCase()));
   }
 
+  /** Cities.csv: city_id, name, country_code. The official city_id is stored as `code`. */
   private async seedCities(rows: Row[], countries: Map<string, any>) {
     let skipped = 0;
     for (const row of rows) {
       const name = str(pick(row, 'name', 'cityName', 'city'));
+      const code = str(pick(row, 'cityId', 'code', 'id'))?.toLowerCase();
       const country = this.findCountry(row, countries);
       if (!name || !country) {
         skipped++;
         continue;
       }
       await this.cityModel.updateOne(
-        { name, countryCode: country.code },
+        code ? { code } : { name, countryCode: country.code },
         {
+          code,
           name,
           countryCode: country.code,
           countryId: country._id,
-          externalId: str(pick(row, 'id', '_id', 'cityId')),
           timezone: str(pick(row, 'timezone', 'timeZone', 'tz')),
           latitude: num(pick(row, 'latitude', 'lat')),
           longitude: num(pick(row, 'longitude', 'lng', 'lon')),
@@ -206,31 +209,33 @@ export class SeedService {
     const byKey = new Map<string, (typeof all)[number]>();
     for (const c of all) {
       byKey.set(`${c.name.toLowerCase()}|${c.countryCode}`, c);
-      if (c.externalId) byKey.set(`id:${c.externalId}`, c);
+      if (c.code) byKey.set(`code:${c.code}`, c);
     }
     this.logger.log(`Cities: ${all.length}${skipped ? ` (skipped ${skipped} rows without a known country)` : ''}`);
     return byKey;
   }
 
+  /** By official city_id first, then by city name + country code. */
   private findCity(row: Row, cities: Map<string, any>) {
-    const ext = str(pick(row, 'cityId', 'city_id'));
-    if (ext && cities.get(`id:${ext}`)) return cities.get(`id:${ext}`);
+    const code = str(pick(row, 'cityId', 'cityCode'))?.toLowerCase();
+    if (code && cities.get(`code:${code}`)) return cities.get(`code:${code}`);
     const name = str(pick(row, 'city', 'cityName', 'municipality'));
-    const code = str(pick(row, 'countryCode', 'country_code', 'iso_country', 'country'))?.toUpperCase();
-    return name && code ? cities.get(`${name.toLowerCase()}|${code}`) : undefined;
+    const country = str(pick(row, 'countryCode', 'country_code', 'country'))?.toUpperCase();
+    return name && country ? cities.get(`${name.toLowerCase()}|${country}`) : undefined;
   }
 
+  /** Airports.csv: iata_code, name, city_id, country_code, time_zone (IANA, FLT-02 / GEN-06). */
   private async seedAirports(rows: Row[], cities: Map<string, any>) {
     let n = 0;
-    let skipped = 0;
+    const problems: string[] = [];
     for (const row of rows) {
-      const iataCode = str(pick(row, 'iataCode', 'iata', 'iata_code', 'code'))?.toUpperCase();
+      const iataCode = str(pick(row, 'iataCode', 'iata', 'code'))?.toUpperCase();
       const city = this.findCity(row, cities);
-      const timezone =
-        str(pick(row, 'timezone', 'timeZone', 'tz', 'tz_database_time_zone', 'ianaTimezone', 'iana', 'olson')) ??
-        city?.timezone;
-      if (!iataCode || !city || !timezone) {
-        skipped++;
+      const timezone = str(pick(row, 'timeZone', 'timezone', 'tz', 'ianaTimezone')) ?? city?.timezone;
+      if (!iataCode || !city || !timezone || !this.isIanaZone(timezone)) {
+        problems.push(
+          `${iataCode ?? '?'}: ${!city ? 'unknown city' : !timezone ? 'no time zone' : `bad time zone ${timezone}`}`,
+        );
         continue;
       }
       await this.airportModel.updateOne(
@@ -239,40 +244,53 @@ export class SeedService {
           iataCode,
           name: str(pick(row, 'name', 'airportName')) ?? iataCode,
           cityId: city._id,
+          cityCode: city.code,
           cityName: city.name,
           countryCode: city.countryCode,
           timezone,
-          externalId: str(pick(row, 'id', '_id', 'airportId')),
         },
         { upsert: true },
       );
       n++;
     }
-    this.logger.log(`Airports: ${n}${skipped ? ` (skipped ${skipped} rows missing IATA, city or time zone)` : ''}`);
+    this.logger.log(`Airports: ${n}`);
+    if (problems.length) this.logger.warn(`Airports skipped: ${problems.join('; ')}`);
   }
 
+  /** Attractions.csv: attraction_id, name, city_id. The official attraction_id is stored as `code`. */
   private async seedAttractions(rows: Row[], cities: Map<string, any>) {
     let n = 0;
     for (const row of rows) {
       const name = str(pick(row, 'name', 'attractionName', 'title'));
       if (!name) continue;
+      const code = str(pick(row, 'attractionId', 'code', 'id'))?.toLowerCase();
       const city = this.findCity(row, cities);
       await this.attractionModel.updateOne(
-        { name, cityId: city?._id ?? null },
+        code ? { code } : { name, cityId: city?._id ?? null },
         {
+          code,
           name,
           cityId: city?._id,
+          cityCode: city?.code,
           cityName: city?.name ?? str(pick(row, 'city', 'cityName')),
           countryCode: city?.countryCode ?? str(pick(row, 'countryCode', 'country'))?.toUpperCase(),
           category: str(pick(row, 'category', 'type')),
           description: str(pick(row, 'description')),
-          externalId: str(pick(row, 'id', '_id', 'attractionId')),
         },
         { upsert: true },
       );
       n++;
     }
     this.logger.log(`Attractions: ${n}`);
+  }
+
+  private isIanaZone(zone: string) {
+    try {
+      new Intl.DateTimeFormat('en-US', { timeZone: zone });
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   /** ACC-18: admin accounts exist only through seeding. */

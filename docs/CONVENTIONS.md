@@ -72,7 +72,7 @@ Escape user search text with `escapeRegex()` before building a RegExp.
 | `NotificationsService.notify(userId, {type, title, message, link, data})` / `notifyMany(ids, ...)` | GEN-01 notifications. Never throws. |
 | `AuditService.log(adminUser, {action, targetType, targetId, reason})` | GEN-07, every admin action |
 | `MediaService.saveImages / list / remove / removeAllFor / copyAll` + `@ImagesUpload()` / `@SingleImageUpload()` | GEN-08 uploads |
-| `ReferenceDataService.resolveAirport / airportsInCity / getCityById / assertCountryCodes / assertSupportedCurrency` | validating against seeded data |
+| `ReferenceDataService.resolveAirport / resolveCity / resolveAttraction / airportsInCity / assertCountryCodes / assertSupportedCurrency` | validating against the official datasets (GEN-12). Accept the **official ids** in your DTOs (`EG`, `cairo`, `CAI`, `att-1`); these helpers also take a Mongo `_id`. Store the city's ObjectId plus its `code` |
 | `UsersService` (import `UsersModule`) — `create`, `setStatus`, `findById`, `getDeactivatedUserIds` | P6 admin features, hiding deactivated users' content |
 | `publicAuthor(user)` from `users.service.ts` | ACC-12: show "Deleted user" for deactivated authors of comments / reviews |
 | `AccountHooksService.registerDeactivationCheck(...)` (import `UsersModule`) | P3 & P4: block ACC-12 while upcoming confirmed bookings exist |

@@ -67,3 +67,18 @@ PaymentHooksService so all three cross-module hooks follow one pattern; moved th
 cancellation-tier rules to common/; gave payment responses explicit types (fixed a TypeScript
 out-of-memory); extended docs/CONVENTIONS.md and wrote docs/P4_HOTELS_GUIDE.md.
 ================================================
+================================================
+Date: 2026-11-05
+Student: Kenzie (team leader)
+Tool: Claude
+Related Requirement: GEN-12, ACC-15, FLT-02
+Prompt:
+The project description was revised (official CSV reference datasets with IANA time zones and
+currencies from Countries.csv; new PATCH /api/admin/providers/:type/:id/deactivate|reactivate;
+updated endpoint requirement labels). Update the project for these changes and review what's new.
+How the output was used:
+Seeder now reads the official CSVs and keeps their ids (city_id, attraction_id); reference lookups
+accept those ids. Added the ACC-15 provider (de)activation endpoints for airlines with
+notifications, audit logging and an e2e test; airlines use active/inactive. Restored .env.example
+and updated the work split.
+================================================
