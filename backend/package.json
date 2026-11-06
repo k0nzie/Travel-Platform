@@ -12,7 +12,7 @@
     "seed": "ts-node -r tsconfig-paths/register src/database/seed/seed.ts",
     "seed:flights": "ts-node src/modules/flights/seed/run.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "node --require ts-node/register --test src/modules/flights/flights.test.ts src/modules/flights/objectid-schema.test.ts src/common/interceptors/serialize-ids.test.ts",
+    "test": "node --require ts-node/register --test src/modules/flights/flights.test.ts src/modules/flights/objectid-schema.test.ts src/common/interceptors/serialize-ids.test.ts src/modules/hotels/hotels.test.ts",
     "test:bookings": "node --test --test-force-exit -r ts-node/register test/flight-bookings.e2e.ts",
     "lint": "node scripts/lint.cjs",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",

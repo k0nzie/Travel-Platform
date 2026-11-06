@@ -67,3 +67,48 @@ PaymentHooksService so all three cross-module hooks follow one pattern; moved th
 cancellation-tier rules to common/; gave payment responses explicit types (fixed a TypeScript
 out-of-memory); extended docs/CONVENTIONS.md and wrote docs/P4_HOTELS_GUIDE.md.
 ================================================
+================================================
+Date: 2026-11-06
+Student: Mostafa Eltatawi
+Tool: ChatGPT
+Related Requirement: HTL-01, HTL-02, ACC-11, GEN-08
+
+Prompt:
+How can I build the hotel management module in NestJS
+according to our project requirements? How should I
+structure the hotel schema, APIs, validation, moderator
+permissions, and image management using the existing
+backend services?
+
+How the output was used:
+Used AI explanations and code suggestions to implement
+the Hotel schema, DTOs, service, controller, and module.
+Added hotel creation, profile editing, public hotel details,
+and image upload and deletion functionality. Reused the
+shared authentication, reference-data, audit, and media
+services. Added eight unit tests and connected HotelsModule
+to the existing backend.
+================================================
+
+================================================
+Date: 2026-11-06
+Student: Mostafa Eltatawi
+Tool: ChatGPT
+Related Requirement: HTL-01, HTL-02, ACC-11, GEN-08
+
+Prompt:
+How can I test my hotel management APIs and make sure
+they work correctly with MongoDB Atlas and Swagger?
+What should I check for authorization, validation,
+image restrictions, and code quality?
+
+How the output was used:
+Followed AI testing guidance to create and update a hotel
+through Swagger and verify the data in MongoDB Atlas.
+Tested administrator and hotel moderator permissions,
+image uploads and deletion, invalid file types, the
+five-image limit, and the 5 MB file-size restriction.
+Fixed formatting issues and verified the TypeScript
+checks, backend build, lint, and all 65 automated tests.
+Reviewed the Git changes before preparing the commit.
+================================================

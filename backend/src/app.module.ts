@@ -1,3 +1,4 @@
+
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { APP_INTERCEPTOR } from '@nestjs/core';
@@ -5,34 +6,50 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ServeStaticModule } from '@nestjs/serve-static';
 import { resolve } from 'path';
+
 import { SerializeIdsInterceptor } from './common/interceptors/serialize-ids.interceptor';
 import configuration from './config/configuration';
 import { validateEnv } from './config/env.validation';
 import { HealthController } from './health.controller';
+
 import { AuditModule } from './modules/audit/audit.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { FlightBookingsModule } from './modules/flight-bookings/flight-bookings.module';
+import { FlightsModule } from './modules/flights/flights.module';
+import { HotelsModule } from './modules/hotels/hotels.module';
 import { MediaModule } from './modules/media/media.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { ReferenceDataModule } from './modules/reference-data/reference-data.module';
 import { UsersModule } from './modules/users/users.module';
-import { FlightsModule } from './modules/flights/flights.module';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true, load: [configuration], validate: validateEnv, cache: true }),
+    ConfigModule.forRoot({
+      isGlobal: true,
+      load: [configuration],
+      validate: validateEnv,
+      cache: true,
+    }),
+
     MongooseModule.forRootAsync({
       inject: [ConfigService],
-      useFactory: (config: ConfigService) => ({ uri: config.get<string>('mongo.uri') }),
+      useFactory: (config: ConfigService) => ({
+        uri: config.get<string>('mongo.uri'),
+      }),
     }),
+
     // Cron jobs (hold expiry FLT-22 / HTL-18, "Departed" / "Completed" status updates, daily FX refresh).
     ScheduleModule.forRoot(),
+
     // GEN-08: uploaded images are served at /uploads/<type>/<file>
     ServeStaticModule.forRoot({
       rootPath: resolve(process.env.UPLOAD_DIR ?? 'uploads'),
       serveRoot: '/uploads',
-      serveStaticOptions: { index: false, fallthrough: false },
+      serveStaticOptions: {
+        index: false,
+        fallthrough: false,
+      },
     }),
 
     // ---- Person 1: foundation + shared services ----
@@ -47,7 +64,7 @@ import { FlightsModule } from './modules/flights/flights.module';
     FlightsModule, // Person 2
     FlightBookingsModule, // Person 3
     PaymentsModule, // Person 3
-    // HotelsModule,           // Person 4
+    HotelsModule, // Person 4
     // HotelBookingsModule,    // Person 4
     // ItinerariesModule,      // Person 5
     // ExchangeRatesModule,    // Person 5
@@ -55,8 +72,15 @@ import { FlightsModule } from './modules/flights/flights.module';
     // ReportsModule,          // Person 6
     // AdminModule,            // Person 6
   ],
+
   controllers: [HealthController],
+
   // Every response uses `id`, never `_id` / `__v` (see docs/CONVENTIONS.md).
-  providers: [{ provide: APP_INTERCEPTOR, useClass: SerializeIdsInterceptor }],
+  providers: [
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: SerializeIdsInterceptor,
+    },
+  ],
 })
 export class AppModule {}
