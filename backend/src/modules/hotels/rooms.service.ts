@@ -1,12 +1,14 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 
 import { ProviderType } from '../../common/constants/enums';
 import { AuthUser } from '../../common/interfaces/auth-user.interface';
 import { assertModerates } from '../../common/utils/access.util';
+import { parseDateOnly } from '../../common/utils/time.util';
 
-import { CreateRoomDto } from './dto/rooms.dto';
+import { CreateRoomAvailabilityDto, CreateRoomDto } from './dto/rooms.dto';
+
 import { Hotel, HotelDocument } from './schemas/hotel.schema';
 import { Room, RoomDocument } from './schemas/room.schema';
 
@@ -21,23 +23,21 @@ export class RoomsService {
   ) {}
 
   /**
-   * HTL-03: The assigned hotel moderator creates a room.
+   * HTL-03: Create a room in the assigned hotel.
    */
   async createRoom(user: AuthUser, hotelId: string, dto: CreateRoomDto) {
-    // A moderator can manage only their assigned hotel.
     assertModerates(user, ProviderType.Hotel, hotelId);
 
-    // The hotel must exist.
     const hotel = await this.hotels.findById(hotelId).exec();
 
     if (!hotel) {
       throw new NotFoundException('Hotel not found');
     }
 
-    // Normalize labels to prevent duplicates such as
-    // "Room 101", "room 101", and "Room   101".
     const roomLabel = dto.roomLabel.trim().replace(/\s+/g, ' ');
+
     const roomKey = roomLabel.toLowerCase();
+
     const roomType = dto.roomType.trim().replace(/\s+/g, ' ');
 
     const existing = await this.rooms
@@ -54,8 +54,6 @@ export class RoomsService {
       });
     }
 
-    // The unique MongoDB index also protects against
-    // simultaneous requests creating the same room.
     let room: RoomDocument;
 
     try {
@@ -90,6 +88,101 @@ export class RoomsService {
       status: room.status,
       createdAt: room.createdAt,
       updatedAt: room.updatedAt,
+    };
+  }
+
+  /**
+   * HTL-04: Add a non-overlapping bookable date range.
+   *
+   * startDate is inclusive.
+   * endDate is exclusive.
+   */
+  async addAvailability(user: AuthUser, hotelId: string, roomId: string, dto: CreateRoomAvailabilityDto) {
+    // Step 1: Moderator must be assigned to this hotel.
+    assertModerates(user, ProviderType.Hotel, hotelId);
+
+    // Step 2: Validate actual calendar dates.
+    const start = parseDateOnly(dto.startDate);
+    const end = parseDateOnly(dto.endDate);
+
+    if (
+      start.toISOString().slice(0, 10) !== dto.startDate ||
+      end.toISOString().slice(0, 10) !== dto.endDate ||
+      start.getTime() >= end.getTime()
+    ) {
+      throw new BadRequestException({
+        message: 'endDate must be after startDate',
+        code: 'INVALID_DATE_RANGE',
+      });
+    }
+
+    // Step 3: Atomically append the range only if
+    // no existing availability range overlaps it.
+    //
+    // Two half-open ranges overlap when:
+    // existing.startDate < new.endDate AND
+    // existing.endDate > new.startDate.
+    //
+    // YYYY-MM-DD strings can be compared directly
+    // because their format is fixed and validated.
+    const updated = await this.rooms
+      .findOneAndUpdate(
+        {
+          _id: roomId,
+          hotelId: new Types.ObjectId(hotelId),
+          availabilityRanges: {
+            $not: {
+              $elemMatch: {
+                startDate: { $lt: dto.endDate },
+                endDate: { $gt: dto.startDate },
+              },
+            },
+          },
+        },
+        {
+          $push: {
+            availabilityRanges: {
+              startDate: dto.startDate,
+              endDate: dto.endDate,
+            },
+          },
+        },
+        {
+          new: true,
+          runValidators: true,
+        },
+      )
+      .exec();
+
+    // Step 4: Distinguish missing room from overlap.
+    if (!updated) {
+      const roomExists = await this.rooms
+        .exists({
+          _id: roomId,
+          hotelId: new Types.ObjectId(hotelId),
+        })
+        .exec();
+
+      if (!roomExists) {
+        throw new NotFoundException('Room not found in this hotel');
+      }
+
+      throw new ConflictException({
+        message: 'Availability range overlaps an existing range',
+        code: 'AVAILABILITY_OVERLAP',
+      });
+    }
+
+    // Step 5: Return the room's availability schedule.
+    return {
+      roomId: String(updated._id),
+      hotelId: String(updated.hotelId),
+      availabilityRanges: updated.availabilityRanges
+        .map((range) => ({
+          startDate: range.startDate,
+          endDate: range.endDate,
+        }))
+        .sort((a, b) => a.startDate.localeCompare(b.startDate)),
     };
   }
 }

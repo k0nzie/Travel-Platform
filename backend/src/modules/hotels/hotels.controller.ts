@@ -1,4 +1,4 @@
-import { CreateRoomDto } from './dto/rooms.dto';
+import { CreateRoomAvailabilityDto, CreateRoomDto } from './dto/rooms.dto';
 import { RoomsService } from './rooms.service';
 
 import { Body, Controller, Delete, Get, Param, Patch, Post, UploadedFiles } from '@nestjs/common';
@@ -110,5 +110,26 @@ export class HotelsController {
   })
   createRoom(@CurrentUser() user: AuthUser, @Param('id', ParseObjectIdPipe) id: string, @Body() dto: CreateRoomDto) {
     return this.roomsService.createRoom(user, id, dto);
+  }
+
+  /**
+   * HTL-04: Define when a hotel room is bookable.
+   */
+  @Post(':id/rooms/:roomId/availability')
+  @Roles(Role.HotelModerator)
+  @ApiOperation({
+    summary: 'HTL-04: Add a non-overlapping room availability range',
+    description:
+      'Only the assigned hotel moderator can add bookable dates. ' +
+      'startDate is inclusive and endDate is exclusive. ' +
+      'Overlapping ranges are rejected.',
+  })
+  addRoomAvailability(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseObjectIdPipe) hotelId: string,
+    @Param('roomId', ParseObjectIdPipe) roomId: string,
+    @Body() dto: CreateRoomAvailabilityDto,
+  ) {
+    return this.roomsService.addAvailability(user, hotelId, roomId, dto);
   }
 }

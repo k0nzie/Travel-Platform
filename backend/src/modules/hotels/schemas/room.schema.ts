@@ -6,6 +6,28 @@ export enum RoomStatus {
   Inactive = 'inactive',
 }
 
+/**
+ * HTL-04: A bookable date range.
+ * startDate is inclusive.
+ * endDate is exclusive.
+ */
+@Schema({ _id: false })
+export class RoomAvailabilityRange {
+  @Prop({
+    required: true,
+    match: /^\d{4}-\d{2}-\d{2}$/,
+  })
+  startDate: string;
+
+  @Prop({
+    required: true,
+    match: /^\d{4}-\d{2}-\d{2}$/,
+  })
+  endDate: string;
+}
+
+export const RoomAvailabilityRangeSchema = SchemaFactory.createForClass(RoomAvailabilityRange);
+
 @Schema({ timestamps: true, collection: 'rooms' })
 export class Room {
   @Prop({
@@ -23,7 +45,6 @@ export class Room {
   })
   roomLabel: string;
 
-  // Normalized room label, used to prevent duplicates.
   @Prop({
     required: true,
     lowercase: true,
@@ -53,7 +74,6 @@ export class Room {
   })
   maxOccupancy: number;
 
-  // Price in minor currency units, e.g. cents.
   @Prop({
     required: true,
     min: 1,
@@ -69,6 +89,17 @@ export class Room {
   })
   status: RoomStatus;
 
+  /**
+   * HTL-04: Dates when the room is bookable.
+   * Overlap prevention will be enforced atomically
+   * by RoomsService.
+   */
+  @Prop({
+    type: [RoomAvailabilityRangeSchema],
+    default: [],
+  })
+  availabilityRanges: RoomAvailabilityRange[];
+
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -77,8 +108,6 @@ export type RoomDocument = HydratedDocument<Room>;
 
 export const RoomSchema = SchemaFactory.createForClass(Room);
 
-// Room identifiers are unique within a hotel.
 RoomSchema.index({ hotelId: 1, roomKey: 1 }, { unique: true });
 
-// Supports hotel room listings and active-room searches.
 RoomSchema.index({ hotelId: 1, status: 1 });

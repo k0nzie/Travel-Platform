@@ -45,3 +45,28 @@ export class CreateRoomDto {
   @Max(Number.MAX_SAFE_INTEGER)
   pricePerNightMinor: number;
 }
+
+/**
+ * HTL-04: Defines one bookable date range for a room.
+ */
+export class CreateRoomAvailabilityDto {
+  @ApiProperty({
+    example: '2026-12-01',
+    description: 'First bookable night, YYYY-MM-DD',
+  })
+  @IsString()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, {
+    message: 'startDate must use YYYY-MM-DD format',
+  })
+  startDate: string;
+
+  @ApiProperty({
+    example: '2026-12-10',
+    description: 'Checkout boundary, exclusive, YYYY-MM-DD',
+  })
+  @IsString()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, {
+    message: 'endDate must use YYYY-MM-DD format',
+  })
+  endDate: string;
+}

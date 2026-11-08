@@ -115,8 +115,16 @@ Reviewed the Git changes before preparing the commit.
 Date: 2026-11-06
 Student: Mostafa Eltatawi
 Tool: ChatGPT
-Related Requirement: HTL-01, HTL-02, ACC-11, GEN-08
+Related Requirement: HTL-01, HTL-02, HTL-03, ACC-11, GEN-08
 
 Prompt: Help implement HTL-03 room management using the existing NestJS hotel module, including room validation, moderator authorization, unique room identifiers, and tests.
 
 How the output was used: Implemented and reviewed the room schema, DTO, service, controller, and automated tests. Verified with TypeScript, lint, build, 73 passing tests, Swagger, and MongoDB Atlas.
+================================================
+Date: 2026-11-06
+Student: Mostafa Eltatawi
+Tool: ChatGPT
+Related Requirement: HTL-01, HTL-02, HTL-03, HTL-04 ACC-11, GEN-08
+Prompt: Explain how to implement HTL-04 room availability ranges in the existing NestJS hotel module, with date validation, overlapping-range prevention, moderator authorization, and tests.
+
+How the output was used: Implemented and reviewed the schema, DTO, service, endpoint, and tests. Verified with 82 passing automated tests, Swagger, MongoDB Atlas, and a separate concurrent-update test.
