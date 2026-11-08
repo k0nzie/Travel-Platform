@@ -112,3 +112,11 @@ Fixed formatting issues and verified the TypeScript
 checks, backend build, lint, and all 65 automated tests.
 Reviewed the Git changes before preparing the commit.
 ================================================
+Date: 2026-11-06
+Student: Mostafa Eltatawi
+Tool: ChatGPT
+Related Requirement: HTL-01, HTL-02, ACC-11, GEN-08
+
+Prompt: Help implement HTL-03 room management using the existing NestJS hotel module, including room validation, moderator authorization, unique room identifiers, and tests.
+
+How the output was used: Implemented and reviewed the room schema, DTO, service, controller, and automated tests. Verified with TypeScript, lint, build, 73 passing tests, Swagger, and MongoDB Atlas.

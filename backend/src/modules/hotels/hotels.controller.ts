@@ -1,3 +1,6 @@
+import { CreateRoomDto } from './dto/rooms.dto';
+import { RoomsService } from './rooms.service';
+
 import { Body, Controller, Delete, Get, Param, Patch, Post, UploadedFiles } from '@nestjs/common';
 
 import { ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
@@ -19,7 +22,10 @@ import { HotelsService } from './hotels.service';
 @ApiCookieAuth('access_token')
 @Controller('hotels')
 export class HotelsController {
-  constructor(private readonly hotelsService: HotelsService) {}
+  constructor(
+    private readonly hotelsService: HotelsService,
+    private readonly roomsService: RoomsService,
+  ) {}
 
   /**
    * HTL-01: Only an administrator can create a hotel.
@@ -93,5 +99,16 @@ export class HotelsController {
     @Param('imageId', ParseObjectIdPipe) imageId: string,
   ) {
     return this.hotelsService.removeImage(user, id, imageId);
+  }
+  /**
+   * HTL-03: Add an individually bookable hotel room.
+   */
+  @Post(':id/rooms')
+  @Roles(Role.HotelModerator)
+  @ApiOperation({
+    summary: 'HTL-03: Moderator creates a room in assigned hotel',
+  })
+  createRoom(@CurrentUser() user: AuthUser, @Param('id', ParseObjectIdPipe) id: string, @Body() dto: CreateRoomDto) {
+    return this.roomsService.createRoom(user, id, dto);
   }
 }
