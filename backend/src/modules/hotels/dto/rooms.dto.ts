@@ -1,6 +1,9 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsInt, IsString, Length, Matches, Max, Min, ValidateIf } from 'class-validator';
+import { IsInt, IsString, Length, Matches, Max, MaxLength, Min, ValidateIf } from 'class-validator';
 
+/**
+ * HTL-03: Create an individual hotel room.
+ */
 export class CreateRoomDto {
   @ApiProperty({
     example: '101',
@@ -47,7 +50,10 @@ export class CreateRoomDto {
 }
 
 /**
- * HTL-04: Defines one bookable date range for a room.
+ * HTL-04: Define a bookable date range for a room.
+ *
+ * startDate is inclusive.
+ * endDate is exclusive.
  */
 export class CreateRoomAvailabilityDto {
   @ApiProperty({
@@ -73,7 +79,8 @@ export class CreateRoomAvailabilityDto {
 
 /**
  * HTL-05: Edit room details.
- * Only provided fields will be updated.
+ *
+ * Only the provided fields will be updated.
  */
 export class UpdateRoomDto {
   @ApiPropertyOptional({
@@ -109,7 +116,10 @@ export class UpdateRoomDto {
 }
 
 /**
- * HTL-05: Replace one existing availability range.
+ * HTL-05: Replace an existing availability range.
+ *
+ * The original dates identify the range to edit.
+ * The new dates define its replacement.
  */
 export class UpdateRoomAvailabilityDto {
   @ApiProperty({
@@ -143,4 +153,49 @@ export class UpdateRoomAvailabilityDto {
   @IsString()
   @Matches(/^\d{4}-\d{2}-\d{2}$/)
   endDate: string;
+}
+
+/**
+ * HTL-06: Block a room for a specific date range.
+ *
+ * startDate is inclusive.
+ * endDate is exclusive.
+ *
+ * Example:
+ * December 12 to December 15 blocks the nights
+ * of December 12, 13 and 14.
+ */
+export class BlockRoomDatesDto {
+  @ApiProperty({
+    example: '2026-12-12',
+    description: 'First blocked night, YYYY-MM-DD',
+  })
+  @IsString()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, {
+    message: 'startDate must use YYYY-MM-DD format',
+  })
+  startDate: string;
+
+  @ApiProperty({
+    example: '2026-12-15',
+    description: 'Exclusive end date, YYYY-MM-DD',
+  })
+  @IsString()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, {
+    message: 'endDate must use YYYY-MM-DD format',
+  })
+  endDate: string;
+
+  @ApiPropertyOptional({
+    example: 'Air conditioning maintenance',
+    maxLength: 200,
+    description: 'Optional explanation for blocking the room',
+  })
+  @ValidateIf((_, value) => value !== undefined)
+  @IsString()
+  @MaxLength(200)
+  @Matches(/\S/, {
+    message: 'reason cannot be blank',
+  })
+  reason?: string;
 }

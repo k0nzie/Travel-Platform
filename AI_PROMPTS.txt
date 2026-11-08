@@ -154,3 +154,25 @@ I used ChatGPT's explanations and code examples to develop and review the room-d
 I verified the functionality using 99 passing automated tests, 2 isolated MongoDB concurrency tests, Swagger API requests, and MongoDB Compass. I also tested invalid dates (400), unauthorized access (403), nonexistent availability ranges (404), and overlapping dates (409).
 
 The AI helped me understand partial updates, date-range comparisons, and concurrent database operations. Booking-related safeguards, including preserving existing reservations and their price snapshots, were identified as remaining integration work.
+================================================
+Date: 09/11/2026
+Student: Mostafa Eltatawi
+AI Tool Used: ChatGPT (OpenAI)
+Project: Travel Planning & Booking Platform — Backend
+Related Requirements: HTL-06, HTL-04, HTL-05
+
+**Prompt / Question (summary of multi-turn discussion):**
+
+How can room date blocking and room deactivation be implemented safely in NestJS with MongoDB Atlas? How should the backend validate date ranges, prevent overlapping blocks during concurrent requests, enforce hotel moderator authorization, preserve room data when deactivating, and test these operations through automated tests, Swagger, and MongoDB Compass? Which requirements depend on the future hotel-booking module?
+
+**How AI Output Was Used:**
+
+Used the guidance to implement room date blocking and room deactivation using Mongoose conditional atomic updates, date validation, moderator authorization, and appropriate HTTP errors.
+
+Added unit tests and isolated MongoDB concurrency/integration tests. Verified the current changes with 115 passing regular tests, 4 passing isolated MongoDB tests, successful typechecking, linting, and build. Tested the endpoints using Swagger and inspected stored documents with MongoDB Compass.
+
+**Remaining Integration Requirements:**
+
+HTL-06 is not fully complete. Booking-conflict restrictions, deletion restricted to never-reserved rooms, and inactive-room exclusion from search must be completed during hotel-booking and search integration.
+
+================================================

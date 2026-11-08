@@ -233,3 +233,203 @@ test('HTL-05: availability edits prevent lost updates in real MongoDB', async ()
     await mongo.stop();
   }
 });
+
+/**
+ * HTL-06: Concurrent overlapping room blocks.
+ *
+ * Uses a temporary real MongoDB instance.
+ * No data is written to the shared Atlas database.
+ */
+test('HTL-06: concurrent overlapping room blocks cannot both be saved', async () => {
+  const mongo = await MongoMemoryServer.create();
+  let connection: Connection | undefined;
+
+  try {
+    connection = await createConnection(mongo.getUri(), {
+      dbName: 'htl06_blocking_concurrency_test',
+    }).asPromise();
+
+    const RoomModel = connection.model(Room.name, RoomSchema);
+
+    const hotelId = new Types.ObjectId();
+
+    const room = await RoomModel.create({
+      hotelId,
+      roomLabel: 'TEST-301',
+      roomKey: 'test-301',
+      roomType: 'Deluxe Double',
+      beds: 2,
+      maxOccupancy: 3,
+      pricePerNightMinor: 30000,
+      availabilityRanges: [
+        {
+          startDate: '2026-12-01',
+          endDate: '2026-12-24',
+        },
+      ],
+      blockedRanges: [],
+    });
+
+    const moderator: any = {
+      id: String(new Types.ObjectId()),
+      role: Role.HotelModerator,
+      moderatorAssignment: {
+        providerType: ProviderType.Hotel,
+        providerId: String(hotelId),
+      },
+    };
+
+    const service = new RoomsService(RoomModel as any, {} as any);
+
+    const firstBlock = {
+      startDate: '2026-12-12',
+      endDate: '2026-12-15',
+      reason: 'Air conditioning maintenance',
+    };
+
+    const overlappingBlock = {
+      startDate: '2026-12-14',
+      endDate: '2026-12-18',
+      reason: 'Plumbing maintenance',
+    };
+
+    // Submit both competing writes concurrently.
+    const results = await Promise.allSettled([
+      service.blockRoomDates(moderator, String(hotelId), String(room._id), firstBlock),
+      service.blockRoomDates(moderator, String(hotelId), String(room._id), overlappingBlock),
+    ]);
+
+    const successful = results.filter((result) => result.status === 'fulfilled');
+
+    const rejected = results.filter((result) => result.status === 'rejected');
+
+    // Only one overlapping block may be saved.
+    assert.equal(successful.length, 1);
+    assert.equal(rejected.length, 1);
+
+    const failure = rejected[0] as PromiseRejectedResult;
+
+    assert.equal(failure.reason.getStatus(), 409);
+    assert.equal(failure.reason.getResponse().code, 'ROOM_BLOCK_OVERLAP');
+
+    // Read the actual saved MongoDB document.
+    const saved = await RoomModel.findById(room._id).lean().exec();
+
+    assert.ok(saved);
+
+    // Exactly one block exists.
+    assert.equal(saved.blockedRanges.length, 1);
+
+    const savedBlock = saved.blockedRanges[0];
+
+    const matchesFirst = savedBlock.startDate === firstBlock.startDate && savedBlock.endDate === firstBlock.endDate;
+
+    const matchesSecond =
+      savedBlock.startDate === overlappingBlock.startDate && savedBlock.endDate === overlappingBlock.endDate;
+
+    assert.ok(matchesFirst || matchesSecond);
+
+    // Blocking must preserve normal availability.
+    assert.deepEqual(
+      saved.availabilityRanges.map((range) => ({
+        startDate: range.startDate,
+        endDate: range.endDate,
+      })),
+      [
+        {
+          startDate: '2026-12-01',
+          endDate: '2026-12-24',
+        },
+      ],
+    );
+
+    // The room should remain active.
+    assert.equal(saved.status, 'active');
+  } finally {
+    if (connection) {
+      await connection.close();
+    }
+
+    await mongo.stop();
+  }
+});
+
+test('HTL-06: Deactivation persists and prevents further blocking in MongoDB', async () => {
+  const mongo = await MongoMemoryServer.create();
+  let connection: Connection | undefined;
+
+  try {
+    connection = await createConnection(mongo.getUri(), {
+      dbName: 'htl06_deactivation_test',
+    }).asPromise();
+
+    const RoomModel = connection.model(Room.name, RoomSchema);
+
+    const hotelId = new Types.ObjectId();
+
+    const room = await RoomModel.create({
+      hotelId,
+      roomLabel: 'TEST-401',
+      roomKey: 'test-401',
+      roomType: 'Standard',
+      beds: 2,
+      maxOccupancy: 2,
+      pricePerNightMinor: 15000,
+      availabilityRanges: [
+        {
+          startDate: '2027-01-01',
+          endDate: '2027-01-20',
+        },
+      ],
+      blockedRanges: [],
+    });
+
+    const moderator: any = {
+      id: String(new Types.ObjectId()),
+      role: Role.HotelModerator,
+      moderatorAssignment: {
+        providerType: ProviderType.Hotel,
+        providerId: String(hotelId),
+      },
+    };
+
+    const service = new RoomsService(RoomModel as any, {} as any);
+
+    const result = await service.deactivateRoom(moderator, String(hotelId), String(room._id));
+
+    assert.equal(result.status, 'inactive');
+
+    // The same room cannot be deactivated twice.
+    await assert.rejects(service.deactivateRoom(moderator, String(hotelId), String(room._id)), (error: any) => {
+      assert.equal(error.getStatus(), 409);
+      return true;
+    });
+
+    // An inactive room cannot receive new blocks.
+    await assert.rejects(
+      service.blockRoomDates(moderator, String(hotelId), String(room._id), {
+        startDate: '2027-01-05',
+        endDate: '2027-01-08',
+        reason: 'Maintenance',
+      }),
+      (error: any) => {
+        assert.equal(error.getStatus(), 409);
+        assert.equal(error.getResponse().code, 'ROOM_INACTIVE');
+        return true;
+      },
+    );
+
+    const saved = await RoomModel.findById(room._id).lean().exec();
+
+    assert.ok(saved);
+    assert.equal(saved.status, 'inactive');
+    assert.equal(saved.blockedRanges.length, 0);
+    assert.equal(saved.availabilityRanges.length, 1);
+  } finally {
+    if (connection) {
+      await connection.close();
+    }
+
+    await mongo.stop();
+  }
+});

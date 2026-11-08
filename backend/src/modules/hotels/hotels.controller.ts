@@ -1,4 +1,10 @@
-import { CreateRoomAvailabilityDto, CreateRoomDto, UpdateRoomDto, UpdateRoomAvailabilityDto } from './dto/rooms.dto';
+import {
+  BlockRoomDatesDto,
+  CreateRoomAvailabilityDto,
+  CreateRoomDto,
+  UpdateRoomDto,
+  UpdateRoomAvailabilityDto,
+} from './dto/rooms.dto';
 import { RoomsService } from './rooms.service';
 
 import { Body, Controller, Delete, Get, Param, Patch, Post, UploadedFiles } from '@nestjs/common';
@@ -171,5 +177,47 @@ export class HotelsController {
     @Body() dto: UpdateRoomAvailabilityDto,
   ) {
     return this.roomsService.updateAvailability(user, hotelId, roomId, dto);
+  }
+
+  /**
+   * HTL-06: Block a room for a date range.
+   */
+  @Post(':id/rooms/:roomId/blocks')
+  @Roles(Role.HotelModerator)
+  @ApiOperation({
+    summary: 'HTL-06: Block hotel room dates',
+    description:
+      'Allows the assigned hotel moderator to block a date ' +
+      'range for maintenance or other operational reasons. ' +
+      'Overlapping blocks are rejected. Booking-conflict ' +
+      'protection requires hotel-booking integration.',
+  })
+  blockRoomDates(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseObjectIdPipe) hotelId: string,
+    @Param('roomId', ParseObjectIdPipe) roomId: string,
+    @Body() dto: BlockRoomDatesDto,
+  ) {
+    return this.roomsService.blockRoomDates(user, hotelId, roomId, dto);
+  }
+
+  /**
+   * HTL-06: Deactivate a hotel room.
+   */
+  @Patch(':id/rooms/:roomId/deactivate')
+  @Roles(Role.HotelModerator)
+  @ApiOperation({
+    summary: 'HTL-06: Deactivate a hotel room',
+    description:
+      'Allows the assigned hotel moderator to deactivate ' +
+      'an active room without deleting its information. ' +
+      'Booking-related safeguards require integration.',
+  })
+  deactivateRoom(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseObjectIdPipe) hotelId: string,
+    @Param('roomId', ParseObjectIdPipe) roomId: string,
+  ) {
+    return this.roomsService.deactivateRoom(user, hotelId, roomId);
   }
 }

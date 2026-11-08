@@ -4,7 +4,13 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { buildValidationPipe } from '../../common/pipes/validation';
-import { CreateRoomAvailabilityDto, CreateRoomDto, UpdateRoomDto, UpdateRoomAvailabilityDto } from './dto/rooms.dto';
+import {
+  BlockRoomDatesDto,
+  CreateRoomAvailabilityDto,
+  CreateRoomDto,
+  UpdateRoomDto,
+  UpdateRoomAvailabilityDto,
+} from './dto/rooms.dto';
 import { RoomsService } from './rooms.service';
 import { RoomSchema } from './schemas/room.schema';
 import { METHOD_METADATA, PATH_METADATA } from '@nestjs/common/constants';
@@ -864,6 +870,467 @@ test('HTL-05: Availability DTO and PATCH route are protected', async () => {
   const handler = HotelsController.prototype.updateRoomAvailability;
 
   assert.equal(Reflect.getMetadata(PATH_METADATA, handler), ':id/rooms/:roomId/availability');
+
+  assert.equal(Reflect.getMetadata(METHOD_METADATA, handler), RequestMethod.PATCH);
+
+  assert.deepEqual(Reflect.getMetadata(ROLES_KEY, handler), [Role.HotelModerator]);
+});
+
+/**
+ * HTL-06: Room blocking test fixture.
+ *
+ * Simulates MongoDB's conditional update.
+ * Does not access the shared Atlas database.
+ */
+type TestBlock = {
+  startDate: string;
+  endDate: string;
+  reason?: string;
+};
+
+function roomBlockingFixture(
+  options: {
+    exists?: boolean;
+    inactive?: boolean;
+    initialBlocks?: TestBlock[];
+  } = {},
+) {
+  const calls: any[] = [];
+
+  const room = {
+    _id: roomId,
+    hotelId,
+    status: options.inactive ? 'inactive' : 'active',
+    availabilityRanges: [
+      {
+        startDate: '2026-12-01',
+        endDate: '2026-12-24',
+      },
+    ],
+    blockedRanges: [...(options.initialBlocks ?? [])],
+  };
+
+  const rooms: any = {
+    findOneAndUpdate: (filter: any, update: any, updateOptions: any) => ({
+      exec: async () => {
+        calls.push({
+          operation: 'write',
+          filter,
+          update,
+          options: updateOptions,
+        });
+
+        if (options.exists === false) return null;
+        if (room.status !== 'active') return null;
+
+        const next: TestBlock = update.$push.blockedRanges;
+
+        const overlaps = room.blockedRanges.some(
+          (existing) => existing.startDate < next.endDate && existing.endDate > next.startDate,
+        );
+
+        if (overlaps) return null;
+
+        room.blockedRanges.push({ ...next });
+
+        return {
+          ...room,
+          blockedRanges: room.blockedRanges.map((block) => ({ ...block })),
+        };
+      },
+    }),
+
+    findOne: (filter: any) => ({
+      exec: async () => {
+        calls.push({
+          operation: 'read',
+          filter,
+        });
+
+        return options.exists === false ? null : room;
+      },
+    }),
+  };
+
+  return {
+    service: new RoomsService(rooms, {} as any),
+    calls,
+    room,
+  };
+}
+
+const validBlock: BlockRoomDatesDto = {
+  startDate: '2026-12-12',
+  endDate: '2026-12-15',
+  reason: 'Air conditioning maintenance',
+};
+
+test('HTL-06: Moderator blocks dates within bookable availability', async () => {
+  const { service, room } = roomBlockingFixture();
+
+  const result = await service.blockRoomDates(moderator, hotelId, roomId, validBlock);
+
+  assert.equal(result.roomId, roomId);
+  assert.equal(result.hotelId, hotelId);
+  assert.equal(result.status, 'active');
+
+  assert.deepEqual(result.blockedRanges, [validBlock]);
+
+  // Blocking must not delete the bookable schedule.
+  assert.deepEqual(room.availabilityRanges, [
+    {
+      startDate: '2026-12-01',
+      endDate: '2026-12-24',
+    },
+  ]);
+});
+
+test('HTL-06: Blocks use an atomic conditional MongoDB update', async () => {
+  const { service, calls } = roomBlockingFixture();
+
+  await service.blockRoomDates(moderator, hotelId, roomId, validBlock);
+
+  const write = calls.find((call) => call.operation === 'write');
+
+  assert.ok(write);
+  assert.equal(write.filter._id, roomId);
+  assert.equal(String(write.filter.hotelId), hotelId);
+  assert.equal(write.filter.status, 'active');
+
+  assert.deepEqual(write.filter.blockedRanges, {
+    $not: {
+      $elemMatch: {
+        startDate: { $lt: validBlock.endDate },
+        endDate: { $gt: validBlock.startDate },
+      },
+    },
+  });
+
+  assert.deepEqual(write.update.$push.blockedRanges, validBlock);
+
+  assert.equal(write.options.new, true);
+  assert.equal(write.options.runValidators, true);
+
+  assert.ok(RoomSchema.path('blockedRanges'));
+});
+
+test('HTL-06: Duplicate and overlapping blocks return 409', async () => {
+  const attempts = [
+    {
+      startDate: '2026-12-12',
+      endDate: '2026-12-15',
+    },
+    {
+      startDate: '2026-12-14',
+      endDate: '2026-12-18',
+    },
+    {
+      startDate: '2026-12-10',
+      endDate: '2026-12-13',
+    },
+    {
+      startDate: '2026-12-13',
+      endDate: '2026-12-14',
+    },
+  ];
+
+  for (const attempt of attempts) {
+    const { service, room } = roomBlockingFixture({
+      initialBlocks: [validBlock],
+    });
+
+    await assert.rejects(service.blockRoomDates(moderator, hotelId, roomId, attempt), (error: any) => {
+      assert.equal(error.getStatus(), 409);
+      assert.equal(error.getResponse().code, 'ROOM_BLOCK_OVERLAP');
+      return true;
+    });
+
+    assert.deepEqual(room.blockedRanges, [validBlock]);
+  }
+});
+
+test('HTL-06: Adjacent blocks are allowed and sorted', async () => {
+  const { service } = roomBlockingFixture({
+    initialBlocks: [validBlock],
+  });
+
+  const result = await service.blockRoomDates(moderator, hotelId, roomId, {
+    startDate: '2026-12-15',
+    endDate: '2026-12-18',
+  });
+
+  assert.equal(result.blockedRanges.length, 2);
+  assert.equal(result.blockedRanges[0].startDate, '2026-12-12');
+  assert.equal(result.blockedRanges[1].startDate, '2026-12-15');
+});
+
+test('HTL-06: Inactive rooms cannot receive new blocks', async () => {
+  const { service, room } = roomBlockingFixture({
+    inactive: true,
+  });
+
+  await assert.rejects(service.blockRoomDates(moderator, hotelId, roomId, validBlock), (error: any) => {
+    assert.equal(error.getStatus(), 409);
+    assert.equal(error.getResponse().code, 'ROOM_INACTIVE');
+    return true;
+  });
+
+  assert.equal(room.blockedRanges.length, 0);
+});
+
+test('HTL-06: Unknown room returns 404', async () => {
+  const { service } = roomBlockingFixture({
+    exists: false,
+  });
+
+  await assert.rejects(service.blockRoomDates(moderator, hotelId, roomId, validBlock), /Room not found in this hotel/);
+});
+
+test('HTL-06: Only the assigned moderator may block dates', async () => {
+  const { service, calls } = roomBlockingFixture();
+
+  await assert.rejects(service.blockRoomDates(moderator, otherHotelId, roomId, validBlock), /assigned hotel/);
+
+  await assert.rejects(service.blockRoomDates(admin, hotelId, roomId, validBlock), /assigned hotel/);
+
+  assert.equal(calls.length, 0);
+});
+
+test('HTL-06: Invalid block dates are rejected before database access', async () => {
+  const { service, calls } = roomBlockingFixture();
+
+  const invalid = [
+    {
+      startDate: '2026-12-15',
+      endDate: '2026-12-12',
+    },
+    {
+      startDate: '2026-12-12',
+      endDate: '2026-12-12',
+    },
+    {
+      startDate: '2026-02-30',
+      endDate: '2026-03-05',
+    },
+    {
+      startDate: '12-12-2026',
+      endDate: '2026-12-15',
+    },
+  ];
+
+  for (const dto of invalid) {
+    await assert.rejects(service.blockRoomDates(moderator, hotelId, roomId, dto));
+  }
+
+  assert.equal(calls.length, 0);
+});
+
+test('HTL-06: Block DTO rejects invalid input', async () => {
+  const pipe = buildValidationPipe();
+
+  const metadata: any = {
+    type: 'body',
+    metatype: BlockRoomDatesDto,
+  };
+
+  const invalid = [
+    { ...validBlock, startDate: '12/12/2026' },
+    { ...validBlock, endDate: null },
+    { ...validBlock, reason: null },
+    { ...validBlock, reason: '   ' },
+    { ...validBlock, reason: 'x'.repeat(201) },
+    { ...validBlock, reason: 123 },
+    { ...validBlock, extraField: true },
+  ];
+
+  for (const dto of invalid) {
+    await assert.rejects(pipe.transform(dto, metadata), `Expected invalid DTO: ${JSON.stringify(dto)}`);
+  }
+
+  const valid = await pipe.transform(validBlock, metadata);
+
+  assert.equal(valid.reason, 'Air conditioning maintenance');
+});
+
+test('HTL-06: Blocking route requires hotel moderator', () => {
+  const handler = HotelsController.prototype.blockRoomDates;
+
+  assert.equal(Reflect.getMetadata(PATH_METADATA, handler), ':id/rooms/:roomId/blocks');
+
+  assert.equal(Reflect.getMetadata(METHOD_METADATA, handler), RequestMethod.POST);
+
+  assert.deepEqual(Reflect.getMetadata(ROLES_KEY, handler), [Role.HotelModerator]);
+});
+
+/**
+ * HTL-06: Room deactivation test fixture.
+ */
+
+/**
+ * HTL-06: Room deactivation test fixture.
+ *
+ * Simulates MongoDB updates without accessing Atlas.
+ */
+function deactivationFixture(
+  options: {
+    exists?: boolean;
+    status?: 'active' | 'inactive';
+  } = {},
+) {
+  const calls: any[] = [];
+
+  const room = {
+    _id: roomId,
+    hotelId,
+    roomLabel: '101',
+    status: options.status ?? 'active',
+    availabilityRanges: [
+      {
+        startDate: '2026-12-01',
+        endDate: '2026-12-24',
+      },
+    ],
+    blockedRanges: [
+      {
+        startDate: '2026-12-12',
+        endDate: '2026-12-15',
+        reason: 'Maintenance',
+      },
+    ],
+  };
+
+  const rooms: any = {
+    findOneAndUpdate: (filter: any, update: any, updateOptions: any) => ({
+      exec: async () => {
+        calls.push({
+          operation: 'update',
+          filter,
+          update,
+          options: updateOptions,
+        });
+
+        if (options.exists === false) return null;
+        if (room.status !== 'active') return null;
+
+        room.status = update.$set.status;
+
+        return { ...room };
+      },
+    }),
+
+    findOne: (filter: any) => ({
+      exec: async () => {
+        calls.push({
+          operation: 'read',
+          filter,
+        });
+
+        return options.exists === false ? null : room;
+      },
+    }),
+  };
+
+  return {
+    service: new RoomsService(rooms, {} as any),
+    room,
+    calls,
+  };
+}
+
+/**
+ * Test 1: Successful deactivation.
+ */
+test('HTL-06: Deactivation preserves room dates', async () => {
+  const { service, room } = deactivationFixture();
+
+  const result = await service.deactivateRoom(moderator, hotelId, roomId);
+
+  assert.equal(result.id, roomId);
+  assert.equal(result.hotelId, hotelId);
+  assert.equal(result.status, 'inactive');
+  assert.equal(room.status, 'inactive');
+
+  assert.deepEqual(result.availabilityRanges, room.availabilityRanges);
+
+  assert.deepEqual(result.blockedRanges, room.blockedRanges);
+});
+
+/**
+ * Test 2: Atomic database operation.
+ */
+test('HTL-06: Deactivation uses an atomic scoped update', async () => {
+  const { service, calls } = deactivationFixture();
+
+  await service.deactivateRoom(moderator, hotelId, roomId);
+
+  const write = calls.find((call) => call.operation === 'update');
+
+  assert.ok(write);
+
+  assert.equal(write.filter._id, roomId);
+  assert.equal(String(write.filter.hotelId), hotelId);
+  assert.equal(write.filter.status, 'active');
+
+  assert.deepEqual(write.update, {
+    $set: {
+      status: 'inactive',
+    },
+  });
+
+  assert.equal(write.options.new, true);
+  assert.equal(write.options.runValidators, true);
+});
+
+/**
+ * Test 3: Cannot deactivate twice.
+ */
+test('HTL-06: Already inactive room returns 409', async () => {
+  const { service } = deactivationFixture({
+    status: 'inactive',
+  });
+
+  await assert.rejects(service.deactivateRoom(moderator, hotelId, roomId), (error: any) => {
+    assert.equal(error.getStatus(), 409);
+    assert.equal(error.getResponse().code, 'ROOM_ALREADY_INACTIVE');
+    return true;
+  });
+});
+
+/**
+ * Test 4: Unknown room.
+ */
+test('HTL-06: Missing room cannot be deactivated', async () => {
+  const { service } = deactivationFixture({
+    exists: false,
+  });
+
+  await assert.rejects(service.deactivateRoom(moderator, hotelId, roomId), (error: any) => {
+    assert.equal(error.getStatus(), 404);
+    return true;
+  });
+});
+
+/**
+ * Test 5: Authorization.
+ */
+test('HTL-06: Deactivation enforces hotel moderator assignment', async () => {
+  const { service, calls } = deactivationFixture();
+
+  await assert.rejects(service.deactivateRoom(moderator, otherHotelId, roomId), /assigned hotel/);
+
+  await assert.rejects(service.deactivateRoom(admin, hotelId, roomId), /assigned hotel/);
+
+  // Unauthorized users must not reach MongoDB.
+  assert.equal(calls.length, 0);
+});
+
+/**
+ * Test 6: Route protection.
+ */
+test('HTL-06: Deactivation PATCH route requires moderator', () => {
+  const handler = HotelsController.prototype.deactivateRoom;
+
+  assert.equal(Reflect.getMetadata(PATH_METADATA, handler), ':id/rooms/:roomId/deactivate');
 
   assert.equal(Reflect.getMetadata(METHOD_METADATA, handler), RequestMethod.PATCH);
 

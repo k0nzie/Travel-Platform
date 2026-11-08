@@ -7,10 +7,16 @@ import { AuthUser } from '../../common/interfaces/auth-user.interface';
 import { assertModerates } from '../../common/utils/access.util';
 import { parseDateOnly } from '../../common/utils/time.util';
 
-import { CreateRoomAvailabilityDto, CreateRoomDto, UpdateRoomDto, UpdateRoomAvailabilityDto } from './dto/rooms.dto';
+import {
+  CreateRoomAvailabilityDto,
+  CreateRoomDto,
+  UpdateRoomDto,
+  UpdateRoomAvailabilityDto,
+  BlockRoomDatesDto,
+} from './dto/rooms.dto';
 
 import { Hotel, HotelDocument } from './schemas/hotel.schema';
-import { Room, RoomDocument } from './schemas/room.schema';
+import { Room, RoomDocument, RoomStatus } from './schemas/room.schema';
 
 @Injectable()
 export class RoomsService {
@@ -380,6 +386,185 @@ export class RoomsService {
         startDate: range.startDate,
         endDate: range.endDate,
       })),
+    };
+  }
+
+  /**
+   * HTL-06: Block a room for a specific date range.
+   *
+   * The new block must not overlap another blocked range.
+   * Normal availability ranges may overlap blocks because
+   * a block overrides availability.
+   *
+   * Booking-conflict checks must be integrated before
+   * this operation is considered booking-safe.
+   */
+  async blockRoomDates(user: AuthUser, hotelId: string, roomId: string, dto: BlockRoomDatesDto) {
+    // Step 1: Verify the moderator's hotel assignment.
+    assertModerates(user, ProviderType.Hotel, hotelId);
+
+    // Step 2: Validate the date format and calendar dates.
+    const datePattern = /^\d{4}-\d{2}-\d{2}$/;
+
+    if (!datePattern.test(dto.startDate) || !datePattern.test(dto.endDate)) {
+      throw new BadRequestException({
+        message: 'Dates must use YYYY-MM-DD format',
+        code: 'INVALID_BLOCK_DATE_RANGE',
+      });
+    }
+
+    const start = parseDateOnly(dto.startDate);
+    const end = parseDateOnly(dto.endDate);
+
+    if (
+      start.toISOString().slice(0, 10) !== dto.startDate ||
+      end.toISOString().slice(0, 10) !== dto.endDate ||
+      start.getTime() >= end.getTime()
+    ) {
+      throw new BadRequestException({
+        message: 'Blocked endDate must be after startDate',
+        code: 'INVALID_BLOCK_DATE_RANGE',
+      });
+    }
+
+    // Step 3: Prepare an optional maintenance reason.
+    const reason = dto.reason?.trim();
+
+    const block = {
+      startDate: dto.startDate,
+      endDate: dto.endDate,
+      ...(reason ? { reason } : {}),
+    };
+
+    const hotelObjectId = new Types.ObjectId(hotelId);
+
+    // Step 4: Atomically add the block only if no
+    // existing blocked range overlaps it.
+    const updated = await this.rooms
+      .findOneAndUpdate(
+        {
+          _id: roomId,
+          hotelId: hotelObjectId,
+          status: RoomStatus.Active,
+          blockedRanges: {
+            $not: {
+              $elemMatch: {
+                startDate: { $lt: dto.endDate },
+                endDate: { $gt: dto.startDate },
+              },
+            },
+          },
+        },
+        {
+          $push: {
+            blockedRanges: block,
+          },
+        },
+        {
+          new: true,
+          runValidators: true,
+        },
+      )
+      .exec();
+
+    // Step 5: Explain why the update failed.
+    if (!updated) {
+      const room = await this.rooms
+        .findOne({
+          _id: roomId,
+          hotelId: hotelObjectId,
+        })
+        .exec();
+
+      if (!room) {
+        throw new NotFoundException('Room not found in this hotel');
+      }
+
+      if (room.status !== RoomStatus.Active) {
+        throw new ConflictException({
+          message: 'Cannot block an inactive room',
+          code: 'ROOM_INACTIVE',
+        });
+      }
+
+      throw new ConflictException({
+        message: 'Blocked dates overlap an existing block',
+        code: 'ROOM_BLOCK_OVERLAP',
+      });
+    }
+
+    // Step 6: Return the updated blocked schedule.
+    return {
+      roomId: String(updated._id),
+      hotelId: String(updated.hotelId),
+      status: updated.status,
+      blockedRanges: updated.blockedRanges
+        .map((range) => ({
+          startDate: range.startDate,
+          endDate: range.endDate,
+          ...(range.reason ? { reason: range.reason } : {}),
+        }))
+        .sort((a, b) => a.startDate.localeCompare(b.startDate)),
+    };
+  }
+
+  /**
+   * HTL-06: Deactivate a room without deleting its data.
+   *
+   * Existing room details and date ranges are preserved.
+   * Booking-specific restrictions will be integrated
+   * with the hotel-booking module.
+   */
+  async deactivateRoom(user: AuthUser, hotelId: string, roomId: string) {
+    assertModerates(user, ProviderType.Hotel, hotelId);
+
+    const hotelObjectId = new Types.ObjectId(hotelId);
+
+    const updated = await this.rooms
+      .findOneAndUpdate(
+        {
+          _id: roomId,
+          hotelId: hotelObjectId,
+          status: RoomStatus.Active,
+        },
+        {
+          $set: {
+            status: RoomStatus.Inactive,
+          },
+        },
+        {
+          new: true,
+          runValidators: true,
+        },
+      )
+      .exec();
+
+    if (!updated) {
+      const existing = await this.rooms
+        .findOne({
+          _id: roomId,
+          hotelId: hotelObjectId,
+        })
+        .exec();
+
+      if (!existing) {
+        throw new NotFoundException('Room not found in this hotel');
+      }
+
+      throw new ConflictException({
+        message: 'Room is already inactive',
+        code: 'ROOM_ALREADY_INACTIVE',
+      });
+    }
+
+    return {
+      id: String(updated._id),
+      hotelId: String(updated.hotelId),
+      roomLabel: updated.roomLabel,
+      status: updated.status,
+      availabilityRanges: updated.availabilityRanges,
+      blockedRanges: updated.blockedRanges,
+      updatedAt: updated.updatedAt,
     };
   }
 }
