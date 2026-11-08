@@ -4,10 +4,15 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { buildValidationPipe } from '../../common/pipes/validation';
-import { CreateRoomAvailabilityDto, CreateRoomDto } from './dto/rooms.dto';
+import { CreateRoomAvailabilityDto, CreateRoomDto, UpdateRoomDto, UpdateRoomAvailabilityDto } from './dto/rooms.dto';
 import { RoomsService } from './rooms.service';
 import { RoomSchema } from './schemas/room.schema';
+import { METHOD_METADATA, PATH_METADATA } from '@nestjs/common/constants';
+import { RequestMethod } from '@nestjs/common';
 
+import { Role } from '../../common/constants/enums';
+import { ROLES_KEY } from '../../common/decorators';
+import { HotelsController } from './hotels.controller';
 const hotelId = '507f1f77bcf86cd799439011';
 const otherHotelId = '507f1f77bcf86cd799439012';
 const roomId = '507f1f77bcf86cd799439013';
@@ -421,4 +426,446 @@ test('HTL-04: Availability DTO rejects invalid input', async () => {
 
   assert.equal(valid.startDate, '2026-12-01');
   assert.equal(valid.endDate, '2026-12-10');
+});
+
+/**
+ * HTL-05: Room editing tests.
+ * These tests use a mocked Room model.
+ */
+function roomUpdateFixture(roomExists = true) {
+  const calls: any[] = [];
+
+  const savedAvailability = [
+    {
+      startDate: '2026-12-01',
+      endDate: '2026-12-10',
+    },
+    {
+      startDate: '2026-12-10',
+      endDate: '2026-12-20',
+    },
+  ];
+
+  const existingRoom = {
+    _id: roomId,
+    hotelId,
+    roomLabel: '101',
+    roomType: 'Deluxe Double',
+    beds: 2,
+    maxOccupancy: 3,
+    pricePerNightMinor: 25000,
+    status: 'active',
+    availabilityRanges: savedAvailability,
+  };
+
+  const rooms: any = {
+    findOneAndUpdate: (filter: any, update: any, options: any) => ({
+      exec: async () => {
+        calls.push({ filter, update, options });
+
+        if (!roomExists) {
+          return null;
+        }
+
+        return {
+          ...existingRoom,
+          ...update.$set,
+        };
+      },
+    }),
+  };
+
+  return {
+    service: new RoomsService(rooms, {} as any),
+    calls,
+    savedAvailability,
+  };
+}
+
+test('HTL-05: Updating price preserves other room fields', async () => {
+  const { service, calls, savedAvailability } = roomUpdateFixture();
+
+  const result = await service.updateRoom(moderator, hotelId, roomId, { pricePerNightMinor: 30000 });
+
+  assert.equal(result.pricePerNightMinor, 30000);
+  assert.equal(result.beds, 2);
+  assert.equal(result.maxOccupancy, 3);
+
+  assert.deepEqual(result.availabilityRanges, savedAvailability);
+
+  assert.deepEqual(calls[0].update, {
+    $set: { pricePerNightMinor: 30000 },
+  });
+});
+
+test('HTL-05: Multiple fields can be updated together', async () => {
+  const { service, calls } = roomUpdateFixture();
+
+  const result = await service.updateRoom(moderator, hotelId, roomId, {
+    beds: 3,
+    maxOccupancy: 4,
+    pricePerNightMinor: 35000,
+  });
+
+  assert.equal(result.beds, 3);
+  assert.equal(result.maxOccupancy, 4);
+  assert.equal(result.pricePerNightMinor, 35000);
+
+  assert.equal(calls.length, 1);
+
+  assert.equal(calls[0].filter._id, roomId);
+  assert.equal(String(calls[0].filter.hotelId), hotelId);
+
+  assert.equal(calls[0].options.new, true);
+  assert.equal(calls[0].options.runValidators, true);
+
+  assert.deepEqual(calls[0].update.$set, {
+    beds: 3,
+    maxOccupancy: 4,
+    pricePerNightMinor: 35000,
+  });
+});
+
+test('HTL-05: Empty updates are rejected', async () => {
+  const { service, calls } = roomUpdateFixture();
+
+  await assert.rejects(service.updateRoom(moderator, hotelId, roomId, {}), /At least one room field must be provided/);
+
+  assert.equal(calls.length, 0);
+});
+
+test('HTL-05: Moderator cannot edit another hotel room', async () => {
+  const { service, calls } = roomUpdateFixture();
+
+  await assert.rejects(service.updateRoom(moderator, otherHotelId, roomId, { beds: 3 }), /assigned hotel/);
+
+  assert.equal(calls.length, 0);
+});
+
+test('HTL-05: Admin cannot use moderator-only editing', async () => {
+  const { service, calls } = roomUpdateFixture();
+
+  await assert.rejects(service.updateRoom(admin, hotelId, roomId, { beds: 3 }), /assigned hotel/);
+
+  assert.equal(calls.length, 0);
+});
+
+test('HTL-05: Missing room returns an error', async () => {
+  const { service } = roomUpdateFixture(false);
+
+  await assert.rejects(service.updateRoom(moderator, hotelId, roomId, { beds: 3 }), /Room not found in this hotel/);
+});
+
+test('HTL-05: Invalid room updates are rejected by DTO', async () => {
+  const pipe = buildValidationPipe();
+
+  const metadata: any = {
+    type: 'body',
+    metatype: UpdateRoomDto,
+  };
+
+  const invalidUpdates = [
+    { beds: 0 },
+    { beds: -1 },
+    { beds: 1.5 },
+    { beds: null },
+    { maxOccupancy: 0 },
+    { maxOccupancy: 2.5 },
+    { pricePerNightMinor: 0 },
+    { pricePerNightMinor: -100 },
+    { pricePerNightMinor: 99.5 },
+    { pricePerNightMinor: Number.MAX_SAFE_INTEGER + 1 },
+    { pricePerNightMinor: null },
+    { roomLabel: 'HACKED' },
+    { availabilityRanges: [] },
+    { beds: 3, unexpectedField: true },
+  ];
+
+  for (const input of invalidUpdates) {
+    await assert.rejects(pipe.transform(input, metadata), `Expected rejection for ${JSON.stringify(input)}`);
+  }
+
+  const valid: UpdateRoomDto = await pipe.transform(
+    {
+      beds: 3,
+      pricePerNightMinor: 30000,
+    },
+    metadata,
+  );
+
+  assert.equal(valid.beds, 3);
+  assert.equal(valid.pricePerNightMinor, 30000);
+});
+
+test('HTL-05: Room PATCH route requires hotel moderator', () => {
+  const handler = HotelsController.prototype.updateRoom;
+
+  assert.equal(Reflect.getMetadata(PATH_METADATA, handler), ':id/rooms/:roomId');
+
+  assert.equal(Reflect.getMetadata(METHOD_METADATA, handler), RequestMethod.PATCH);
+
+  assert.deepEqual(Reflect.getMetadata(ROLES_KEY, handler), [Role.HotelModerator]);
+});
+
+/**
+ * HTL-05: Availability editing test fixture.
+ *
+ * Simulates reading and conditionally updating a room.
+ */
+function availabilityEditFixture(
+  options: {
+    roomExists?: boolean;
+    concurrentChange?: boolean;
+  } = {},
+) {
+  const calls: any[] = [];
+
+  const stored: {
+    _id: string;
+    hotelId: string;
+    availabilityRanges: TestRange[];
+  } = {
+    _id: roomId,
+    hotelId,
+    availabilityRanges: [
+      { startDate: '2026-12-01', endDate: '2026-12-10' },
+      { startDate: '2026-12-10', endDate: '2026-12-20' },
+    ],
+  };
+
+  const rooms: any = {
+    findOne: (filter: any) => ({
+      exec: async () => {
+        calls.push({ operation: 'read', filter });
+
+        if (options.roomExists === false) return null;
+
+        return {
+          ...stored,
+          availabilityRanges: stored.availabilityRanges.map((range) => ({ ...range })),
+        };
+      },
+    }),
+
+    findOneAndUpdate: (filter: any, update: any, updateOptions: any) => ({
+      exec: async () => {
+        calls.push({
+          operation: 'update',
+          filter,
+          update,
+          options: updateOptions,
+        });
+
+        // Simulate the MongoDB conditional array match.
+        const scheduleUnchanged =
+          JSON.stringify(filter.availabilityRanges) === JSON.stringify(stored.availabilityRanges);
+
+        if (options.concurrentChange || !scheduleUnchanged) {
+          return null;
+        }
+
+        stored.availabilityRanges = update.$set.availabilityRanges.map((range: TestRange) => ({ ...range }));
+
+        return {
+          ...stored,
+          availabilityRanges: stored.availabilityRanges.map((range) => ({ ...range })),
+        };
+      },
+    }),
+  };
+
+  return {
+    service: new RoomsService(rooms, {} as any),
+    calls,
+    stored,
+  };
+}
+
+const validAvailabilityEdit: UpdateRoomAvailabilityDto = {
+  originalStartDate: '2026-12-10',
+  originalEndDate: '2026-12-20',
+  startDate: '2026-12-10',
+  endDate: '2026-12-24',
+};
+
+test('HTL-05: Existing availability range can be edited', async () => {
+  const { service, stored } = availabilityEditFixture();
+
+  const result = await service.updateAvailability(moderator, hotelId, roomId, validAvailabilityEdit);
+
+  assert.equal(result.roomId, roomId);
+  assert.equal(result.hotelId, hotelId);
+
+  assert.deepEqual(result.availabilityRanges, [
+    { startDate: '2026-12-01', endDate: '2026-12-10' },
+    { startDate: '2026-12-10', endDate: '2026-12-24' },
+  ]);
+
+  assert.deepEqual(result.availabilityRanges, stored.availabilityRanges);
+});
+
+test('HTL-05: Availability update uses a conditional MongoDB write', async () => {
+  const { service, calls } = availabilityEditFixture();
+
+  await service.updateAvailability(moderator, hotelId, roomId, validAvailabilityEdit);
+
+  const write = calls.find((call) => call.operation === 'update');
+
+  assert.ok(write);
+  assert.equal(write.filter._id, roomId);
+  assert.equal(String(write.filter.hotelId), hotelId);
+
+  assert.deepEqual(write.filter.availabilityRanges, [
+    { startDate: '2026-12-01', endDate: '2026-12-10' },
+    { startDate: '2026-12-10', endDate: '2026-12-20' },
+  ]);
+
+  assert.deepEqual(write.update.$set.availabilityRanges, [
+    { startDate: '2026-12-01', endDate: '2026-12-10' },
+    { startDate: '2026-12-10', endDate: '2026-12-24' },
+  ]);
+
+  assert.equal(write.options.new, true);
+  assert.equal(write.options.runValidators, true);
+});
+
+test('HTL-05: Availability editing rejects overlapping ranges', async () => {
+  const { service, stored, calls } = availabilityEditFixture();
+
+  await assert.rejects(
+    service.updateAvailability(moderator, hotelId, roomId, {
+      ...validAvailabilityEdit,
+      startDate: '2026-12-08',
+      endDate: '2026-12-24',
+    }),
+    /overlaps an existing range/,
+  );
+
+  assert.equal(stored.availabilityRanges[1].endDate, '2026-12-20');
+  assert.equal(
+    calls.some((call) => call.operation === 'update'),
+    false,
+  );
+});
+
+test('HTL-05: Availability remains sorted after editing', async () => {
+  const { service } = availabilityEditFixture();
+
+  const result = await service.updateAvailability(moderator, hotelId, roomId, {
+    ...validAvailabilityEdit,
+    startDate: '2026-11-20',
+    endDate: '2026-11-30',
+  });
+
+  assert.deepEqual(result.availabilityRanges, [
+    { startDate: '2026-11-20', endDate: '2026-11-30' },
+    { startDate: '2026-12-01', endDate: '2026-12-10' },
+  ]);
+});
+
+test('HTL-05: Missing original availability range returns 404', async () => {
+  const { service, calls } = availabilityEditFixture();
+
+  await assert.rejects(
+    service.updateAvailability(moderator, hotelId, roomId, {
+      ...validAvailabilityEdit,
+      originalStartDate: '2027-01-01',
+      originalEndDate: '2027-01-10',
+    }),
+    /Original availability range not found/,
+  );
+
+  assert.equal(
+    calls.some((call) => call.operation === 'update'),
+    false,
+  );
+});
+
+test('HTL-05: Concurrent schedule modification returns conflict', async () => {
+  const { service } = availabilityEditFixture({
+    concurrentChange: true,
+  });
+
+  await assert.rejects(
+    service.updateAvailability(moderator, hotelId, roomId, validAvailabilityEdit),
+    /Availability changed during editing/,
+  );
+});
+
+test('HTL-05: Availability editing enforces hotel assignment', async () => {
+  const { service, calls } = availabilityEditFixture();
+
+  await assert.rejects(
+    service.updateAvailability(moderator, otherHotelId, roomId, validAvailabilityEdit),
+    /assigned hotel/,
+  );
+
+  assert.equal(calls.length, 0);
+});
+
+test('HTL-05: Availability editing rejects unknown rooms and invalid dates', async () => {
+  const missing = availabilityEditFixture({
+    roomExists: false,
+  });
+
+  await assert.rejects(
+    missing.service.updateAvailability(moderator, hotelId, roomId, validAvailabilityEdit),
+    /Room not found in this hotel/,
+  );
+
+  const invalid = [
+    {
+      ...validAvailabilityEdit,
+      endDate: '2026-12-01',
+    },
+    {
+      ...validAvailabilityEdit,
+      endDate: '2026-12-10',
+    },
+    {
+      ...validAvailabilityEdit,
+      startDate: '2026-02-30',
+      endDate: '2026-03-05',
+    },
+  ];
+
+  const { service, calls } = availabilityEditFixture();
+
+  for (const dto of invalid) {
+    await assert.rejects(service.updateAvailability(moderator, hotelId, roomId, dto));
+  }
+
+  assert.equal(calls.length, 0);
+});
+
+test('HTL-05: Availability DTO and PATCH route are protected', async () => {
+  const pipe = buildValidationPipe();
+
+  const metadata: any = {
+    type: 'body',
+    metatype: UpdateRoomAvailabilityDto,
+  };
+
+  const invalidInputs = [
+    { ...validAvailabilityEdit, endDate: '24-12-2026' },
+    { ...validAvailabilityEdit, startDate: null },
+    { ...validAvailabilityEdit, originalEndDate: undefined },
+    { ...validAvailabilityEdit, unknownField: true },
+  ];
+
+  for (const input of invalidInputs) {
+    await assert.rejects(pipe.transform(input, metadata));
+  }
+
+  const valid = await pipe.transform(validAvailabilityEdit, metadata);
+
+  assert.equal(valid.endDate, '2026-12-24');
+
+  const handler = HotelsController.prototype.updateRoomAvailability;
+
+  assert.equal(Reflect.getMetadata(PATH_METADATA, handler), ':id/rooms/:roomId/availability');
+
+  assert.equal(Reflect.getMetadata(METHOD_METADATA, handler), RequestMethod.PATCH);
+
+  assert.deepEqual(Reflect.getMetadata(ROLES_KEY, handler), [Role.HotelModerator]);
 });

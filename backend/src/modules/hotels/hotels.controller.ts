@@ -1,4 +1,4 @@
-import { CreateRoomAvailabilityDto, CreateRoomDto } from './dto/rooms.dto';
+import { CreateRoomAvailabilityDto, CreateRoomDto, UpdateRoomDto, UpdateRoomAvailabilityDto } from './dto/rooms.dto';
 import { RoomsService } from './rooms.service';
 
 import { Body, Controller, Delete, Get, Param, Patch, Post, UploadedFiles } from '@nestjs/common';
@@ -131,5 +131,45 @@ export class HotelsController {
     @Body() dto: CreateRoomAvailabilityDto,
   ) {
     return this.roomsService.addAvailability(user, hotelId, roomId, dto);
+  }
+
+  /**
+   * HTL-05: Moderator edits room details.
+   */
+  @Patch(':id/rooms/:roomId')
+  @Roles(Role.HotelModerator)
+  @ApiOperation({
+    summary: 'HTL-05: Edit room details',
+    description:
+      'The assigned hotel moderator can update beds, ' +
+      'maximum occupancy, and nightly price. ' +
+      'Only provided fields are changed.',
+  })
+  updateRoom(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseObjectIdPipe) hotelId: string,
+    @Param('roomId', ParseObjectIdPipe) roomId: string,
+    @Body() dto: UpdateRoomDto,
+  ) {
+    return this.roomsService.updateRoom(user, hotelId, roomId, dto);
+  }
+
+  /**
+   * HTL-05: Edit an existing room availability period.
+   */
+  @Patch(':id/rooms/:roomId/availability')
+  @Roles(Role.HotelModerator)
+  @ApiOperation({
+    summary: 'HTL-05: Edit room availability dates',
+    description:
+      'Replaces an existing availability range, rejects ' + 'overlaps, and detects concurrent schedule changes.',
+  })
+  updateRoomAvailability(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseObjectIdPipe) hotelId: string,
+    @Param('roomId', ParseObjectIdPipe) roomId: string,
+    @Body() dto: UpdateRoomAvailabilityDto,
+  ) {
+    return this.roomsService.updateAvailability(user, hotelId, roomId, dto);
   }
 }

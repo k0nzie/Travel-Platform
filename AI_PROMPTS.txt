@@ -128,3 +128,29 @@ Related Requirement: HTL-01, HTL-02, HTL-03, HTL-04 ACC-11, GEN-08
 Prompt: Explain how to implement HTL-04 room availability ranges in the existing NestJS hotel module, with date validation, overlapping-range prevention, moderator authorization, and tests.
 
 How the output was used: Implemented and reviewed the schema, DTO, service, endpoint, and tests. Verified with 82 passing automated tests, Swagger, MongoDB Atlas, and a separate concurrent-update test.
+================================================
+Date: 08/11/2026
+
+Student Mostafa Eltatawi
+
+AI Tool Used: ChatGPT (OpenAI)
+
+Project:Travel Planning & Booking Platform — Backend (NestJS, MongoDB, Swagger)
+
+Related Requirements: HTL-05 (Edit Room Details and Availability), building on HTL-03 (Room Management) and HTL-04 (Room Availability).
+
+Prompt / Question:
+
+How can a hotel moderator safely edit a room's bed count, maximum occupancy, nightly price, and available dates without accidentally changing other room information? Why is MongoDB's `$set` operator preferable for partial updates?
+
+When editing availability periods, how can I detect overlapping dates while allowing consecutive periods to share a checkout boundary? I'm also curious about what happens if two moderators update the same room's availability simultaneously. How can optimistic concurrency control prevent one update from overwriting the other?
+
+What validation, authorization, and testing approaches would best verify these behaviors in our NestJS and MongoDB backend?
+
+How the AI Output Was Used:
+
+I used ChatGPT's explanations and code examples to develop and review the room-detail and availability-editing functionality. This included two PATCH endpoints, DTO validation, hotel-moderator authorization, overlap detection, and concurrency protection.
+
+I verified the functionality using 99 passing automated tests, 2 isolated MongoDB concurrency tests, Swagger API requests, and MongoDB Compass. I also tested invalid dates (400), unauthorized access (403), nonexistent availability ranges (404), and overlapping dates (409).
+
+The AI helped me understand partial updates, date-range comparisons, and concurrent database operations. Booking-related safeguards, including preserving existing reservations and their price snapshots, were identified as remaining integration work.
