@@ -217,8 +217,8 @@ Verification included **136 passing unit tests, 5 passing MongoDB integration te
 
 Booking-conflict checks involving confirmed reservations and pending payment holds were identified as dependencies for the upcoming hotel booking implementation.
 =========================================================================
-Date: 09/11/2026  
-AI Tool: ChatGPT (OpenAI)  
+Date: 09/11/2026
+AI Tool: ChatGPT (OpenAI)
 Related Requirements: HTL-16, HTL-17, HTL-18
 
 **Prompt / Question:**
