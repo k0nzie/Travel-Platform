@@ -7,7 +7,7 @@ import { RoomsService } from './rooms.service';
 
 import { Hotel, HotelSchema } from './schemas/hotel.schema';
 import { Room, RoomSchema } from './schemas/room.schema';
-
+import { HotelSearchService } from './hotel-search.service';
 @Module({
   imports: [
     MongooseModule.forFeature([
@@ -22,7 +22,7 @@ import { Room, RoomSchema } from './schemas/room.schema';
     ]),
   ],
   controllers: [HotelsController],
-  providers: [HotelsService, RoomsService],
-  exports: [HotelsService, RoomsService],
+  providers: [HotelsService, RoomsService, HotelSearchService],
+  exports: [HotelsService, RoomsService, HotelSearchService],
 })
 export class HotelsModule {}

@@ -198,3 +198,21 @@ Verification included 123 passing unit tests, 4 passing MongoDB integration test
 The configured hotel policy must be integrated into booking summaries and cancellation/refund execution when HTL-16 and HTL-21 are implemented.
 
 ================================================
+Date: 09/11/2026
+
+AI Tool: ChatGPT (OpenAI)
+Related Requirements: HTL-11, HTL-12, HTL-15
+
+**Prompt / Question:**
+
+How can hotel search, advanced filtering, and room availability be implemented professionally in NestJS and MongoDB while meeting the project requirements? How can we search active hotels by destination, check-in/check-out dates, guest count, and room count; validate complete-stay availability; exclude blocked and inactive rooms; handle combined room occupancy; apply price and rating filters; calculate total stay prices; and ensure proper pagination, authorization, and integration with future booking functionality?
+
+**How AI Output Was Used:**
+
+AI-assisted technical guidance was used to design and implement the hotel search DTO, room availability validation logic, hotel search service, and public API endpoints for searching hotels and viewing available rooms.
+
+The implementation follows the existing NestJS architecture, reuses the hotel and room schemas, supports date-range validation and occupancy constraints, and preserves compatibility with previously implemented hotel features.
+
+Verification included **136 passing unit tests, 5 passing MongoDB integration tests**, successful typechecking, linting, and build, followed by Swagger and MongoDB Compass verification of search results, price and rating filters, blocked dates, and inactive-room exclusion.
+
+Booking-conflict checks involving confirmed reservations and pending payment holds were identified as dependencies for the upcoming hotel booking implementation.
