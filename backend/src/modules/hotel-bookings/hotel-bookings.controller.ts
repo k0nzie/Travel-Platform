@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, Post, Query } from '@nestjs/common';
 import { ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Role } from '../../common/constants/enums';
 import { CurrentUser, Roles } from '../../common/decorators';
@@ -6,7 +6,7 @@ import { AuthUser } from '../../common/interfaces/auth-user.interface';
 import { ParseObjectIdPipe } from '../../common/pipes/parse-object-id.pipe';
 import { CreateHotelBookingDto } from './dto/hotel-booking.dto';
 import { HotelBookingsService } from './hotel-bookings.service';
-
+import { HotelBookingListQueryDto } from './dto/hotel-booking-list.dto';
 @ApiTags('Hotel bookings')
 @ApiCookieAuth('access_token')
 @Controller('hotel-bookings')
@@ -27,6 +27,19 @@ export class HotelBookingsController {
   hold(@CurrentUser() user: AuthUser, @Body() dto: CreateHotelBookingDto) {
     return this.bookings.createHold(user, dto);
   }
+
+  @Get()
+  @Roles(Role.User)
+  @ApiOperation({
+    summary: 'HTL-20: List my hotel bookings by Upcoming, Past or Cancelled',
+  })
+  list(
+    @CurrentUser() user: AuthUser,
+    @Query() query: HotelBookingListQueryDto,
+  ) {
+    return this.bookings.list(user, query);
+  }
+
 
   @Get(':id')
   @ApiOperation({ summary: 'HTL-17: Hotel booking details and payment-confirmed status (owner or admin)' })

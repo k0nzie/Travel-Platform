@@ -254,3 +254,113 @@ test('HTL-16/17: routes are protected and expose quote, hold, confirmation page'
   assert.deepEqual(Reflect.getMetadata(ROLES_KEY, HotelBookingsController.prototype.summary), [Role.User]);
   assert.deepEqual(Reflect.getMetadata(ROLES_KEY, HotelBookingsController.prototype.hold), [Role.User]);
 });
+
+test('HTL-20: booking history is owner-scoped, grouped and paginated', async () => {
+  const booking: any = {
+    _id: new Types.ObjectId(),
+    userId: new Types.ObjectId(userId),
+    hotelId: new Types.ObjectId(hotelId),
+    reference: 'HTL-TEST1234',
+    hotelName: 'Example Hotel',
+    status: BookingStatus.Confirmed,
+    checkIn: '2027-02-01',
+    checkOut: '2027-02-03',
+    nights: 2,
+    rooms: [
+      {
+        roomId: new Types.ObjectId(roomId),
+        roomLabel: '101',
+        roomType: 'Standard',
+        adults: 2,
+        childrenAges: [],
+        maxOccupancy: 3,
+        pricePerNightMinor: 10000,
+        totalMinor: 20000,
+      },
+    ],
+    guestCount: 2,
+    totalMinor: 20000,
+    currency: 'USD',
+    holdExpiresAt: new Date('2027-01-01'),
+  };
+
+  let filter: any;
+  let skipped = 0;
+
+  const chain: any = {
+    sort() { return this; },
+    skip(n: number) { skipped = n; return this; },
+    limit() { return this; },
+    lean() { return this; },
+    exec: async () => [booking],
+  };
+
+  const model: any = {
+    find(query: any) {
+      filter = query;
+      return chain;
+    },
+    countDocuments() {
+      return { exec: async () => 1 };
+    },
+  };
+
+  const service = new HotelBookingsService(
+    model,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+  );
+
+  const upcoming = await service.list(user, {
+    scope: 'upcoming',
+    page: 2,
+    limit: 3,
+  });
+
+  assert.equal(String(filter.userId), userId);
+  assert.deepEqual(filter.$and[1].status.$in, [
+    BookingStatus.PendingPayment,
+    BookingStatus.Confirmed,
+  ]);
+  assert.equal(skipped, 3);
+  assert.equal(upcoming.total, 1);
+  assert.equal(upcoming.page, 2);
+  assert.equal(upcoming.items[0].reference, 'HTL-TEST1234');
+  assert.equal(upcoming.items[0].rooms[0].roomId, roomId);
+
+  await service.list(user, { scope: 'past' });
+  assert.ok(
+    filter.$and[0].$or.some(
+      (condition: any) =>
+        condition.status === BookingStatus.Completed,
+    ),
+  );
+
+  await service.list(user, { scope: 'cancelled' });
+  assert.equal(filter.status, BookingStatus.Cancelled);
+  assert.equal(String(filter.userId), userId);
+
+  await assert.rejects(
+    service.list({ ...user, role: Role.HotelModerator }, {}),
+  );
+
+  assert.equal(
+    Reflect.getMetadata(
+      METHOD_METADATA,
+      HotelBookingsController.prototype.list,
+    ),
+    RequestMethod.GET,
+  );
+  assert.deepEqual(
+    Reflect.getMetadata(
+      ROLES_KEY,
+      HotelBookingsController.prototype.list,
+    ),
+    [Role.User],
+  );
+});

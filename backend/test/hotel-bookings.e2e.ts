@@ -145,6 +145,29 @@ test('HTL-16/17/18: real MongoDB multi-room holds are atomic, confirmed on payme
     const confirmed = await Bookings.findById(pending.id).lean().exec();
     assert.equal(confirmed?.status, BookingStatus.Confirmed);
     assert.equal(String(confirmed?.paymentId), String(paymentId));
+
+    // HTL-20: Confirmed booking appears in its owner's history.
+    const upcomingHistory = await service.list(user, {
+      scope: 'upcoming',
+      page: 1,
+      limit: 10,
+    });
+
+    assert.equal(upcomingHistory.total, 1);
+    assert.equal(upcomingHistory.items.length, 1);
+    assert.equal(upcomingHistory.items[0].reference, pending.reference);
+    assert.equal(upcomingHistory.items[0].rooms.length, 2);
+
+    // Another traveller must not see this reservation.
+    const strangerHistory = await service.list(stranger, {
+      scope: 'upcoming',
+      page: 1,
+      limit: 10,
+    });
+
+    assert.equal(strangerHistory.total, 0);
+    assert.deepEqual(strangerHistory.items, []);
+
     for (const r of await Rooms.find({ _id: { $in: [id1, id2] } })
       .lean()
       .exec()) {
@@ -237,6 +260,66 @@ test('HTL-16/17/18: real MongoDB multi-room holds are atomic, confirmed on payme
     assert.equal(attempts.filter((r) => r.status === 'fulfilled').length, 1);
     assert.equal(attempts.filter((r) => r.status === 'rejected').length, 1);
     assert.equal((await Rooms.findById(id3).lean().exec()).reservationLocks.length, 1);
+
+    // HTL-20: An expired booking appears in Past.
+    const pastHistory = await service.list(stranger, {
+      scope: 'past',
+      page: 1,
+      limit: 10,
+    });
+
+    assert.ok(pastHistory.items.some((b) => b.id === adjacent.id));
+
+    // Create a cancelled booking fixture in isolated MongoDB.
+    const cancelledBooking = await Bookings.create({
+      reference: 'HTL-TEST-CANCELLED',
+      userId,
+      hotelId,
+      hotelName: 'Isolated Booking Test Hotel',
+      status: BookingStatus.Cancelled,
+      checkIn: '2027-02-01',
+      checkOut: '2027-02-03',
+      nights: 2,
+      rooms: [{
+        roomId: id0,
+        roomLabel: '100',
+        roomType: 'Standard',
+        adults: 1,
+        childrenAges: [],
+        maxOccupancy: 2,
+        pricePerNightMinor: 9000,
+        totalMinor: 18000,
+      }],
+      guestCount: 1,
+      totalMinor: 18000,
+      currency: 'USD',
+      checkInTime: '14:00',
+      checkOutTime: '12:00',
+      cancellationTiers: [{ minDays: 7, refundPercent: 100 }],
+      holdExpiresAt: new Date('2027-01-01'),
+    });
+
+    // Cancelled bookings appear only in their owner's history.
+    const cancelledHistory = await service.list(user, {
+      scope: 'cancelled',
+      page: 1,
+      limit: 10,
+    });
+
+    assert.ok(
+      cancelledHistory.items.some(
+        (b) => b.id === String(cancelledBooking._id),
+      ),
+    );
+
+    const strangerCancelled = await service.list(stranger, {
+      scope: 'cancelled',
+      page: 1,
+      limit: 10,
+    });
+
+    assert.equal(strangerCancelled.total, 0);
+
   } finally {
     if (connection) await connection.close();
     await mongo.stop();

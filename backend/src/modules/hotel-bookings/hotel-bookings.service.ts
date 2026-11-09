@@ -11,8 +11,9 @@ import { ConfigService } from '@nestjs/config';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { randomInt } from 'node:crypto';
-import { ClientSession, Connection, Model, Types } from 'mongoose';
-
+import { ClientSession, Connection, FilterQuery,  Model, Types } from 'mongoose';
+import { paginate } from '../../common/utils/paginate';
+import { HotelBookingListQueryDto } from './dto/hotel-booking-list.dto';
 import { BookingStatus, BookingType, Role } from '../../common/constants/enums';
 import { AuthUser } from '../../common/interfaces/auth-user.interface';
 import { assertOwner, sameId } from '../../common/utils/access.util';
@@ -316,6 +317,68 @@ export class HotelBookingsService implements OnModuleInit, BookingConfirmationHa
       data: { bookingId: String(confirmed._id), reference: confirmed.reference, totalMinor: confirmed.totalMinor },
     });
     return true;
+  }
+
+  /** HTL-20: List the traveller's own hotel reservations. */
+  async list(user: AuthUser, query: HotelBookingListQueryDto) {
+    this.assertTraveller(user);
+
+    const today = new Date().toISOString().slice(0, 10);
+
+    const filter: FilterQuery<HotelBooking> = {
+      userId: new Types.ObjectId(user.id),
+    };
+
+    if (query.status) {
+      filter.status = query.status;
+    }
+
+    if (query.scope === 'upcoming') {
+      filter.$and = [
+        { checkOut: { $gt: today } },
+        {
+          status: {
+            $in: [
+              BookingStatus.PendingPayment,
+              BookingStatus.Confirmed,
+            ],
+          },
+        },
+      ];
+    } else if (query.scope === 'past') {
+      filter.$and = [
+        {
+          $or: [
+            { status: BookingStatus.Completed },
+            { status: BookingStatus.Expired },
+            {
+              status: BookingStatus.Confirmed,
+              checkOut: { $lte: today },
+            },
+          ],
+        },
+      ];
+    } else if (query.scope === 'cancelled') {
+      filter.status = BookingStatus.Cancelled;
+    }
+
+    const result = await paginate<HotelBookingDocument>(
+      this.bookings,
+      filter,
+      {
+        page: query.page,
+        limit: query.limit,
+        sort: {
+          checkIn: query.scope === 'upcoming' ? 1 : -1,
+          _id: -1,
+        },
+      },
+    );
+
+    return {
+      ...result,
+      items: result.items.map((booking) => this.toView(booking)),
+    };
   }
 
   /** HTL-17 confirmation page: the owner can fetch the updated booking status and reference. */
