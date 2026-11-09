@@ -176,3 +176,25 @@ Added unit tests and isolated MongoDB concurrency/integration tests. Verified th
 HTL-06 is not fully complete. Booking-conflict restrictions, deletion restricted to never-reserved rooms, and inactive-room exclusion from search must be completed during hotel-booking and search integration.
 
 ================================================
+================================================
+Date: 09/11/2026
+AI Tool: ChatGPT (OpenAI)
+Related Requirements: HTL-09, HTL-10
+
+**Prompt / Question:**
+
+How can standard hotel check-in/check-out times and cancellation policy tiers be implemented professionally in NestJS and MongoDB? How can we validate times, enforce unique non-negative cancellation thresholds, calculate the correct refund percentage, restrict modifications to assigned hotel moderators, and test the implementation?
+
+**How AI Output Was Used:**
+
+AI-assisted guidance was used to create the hotel policy DTO, implement the policy update service, expose the moderator-protected PUT endpoint, and extend the existing hotel tests.
+
+The implementation reuses the shared cancellation-tier utilities and existing hotel schema.
+
+Verification included 123 passing unit tests, 4 passing MongoDB integration tests, successful typechecking, linting and build, followed by Swagger and MongoDB Compass verification.
+
+**Pending Integration:**
+
+The configured hotel policy must be integrated into booking summaries and cancellation/refund execution when HTL-16 and HTL-21 are implemented.
+
+================================================

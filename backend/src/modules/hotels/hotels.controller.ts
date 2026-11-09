@@ -7,7 +7,7 @@ import {
 } from './dto/rooms.dto';
 import { RoomsService } from './rooms.service';
 
-import { Body, Controller, Delete, Get, Param, Patch, Post, UploadedFiles } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Put, UploadedFiles } from '@nestjs/common';
 
 import { ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 
@@ -23,6 +23,8 @@ import { ImagesUpload } from '../media/media.decorators';
 import { CreateHotelDto, UpdateHotelDto } from './dto/hotels.dto';
 
 import { HotelsService } from './hotels.service';
+
+import { PutHotelPoliciesDto } from './dto/hotel-policies.dto';
 
 @ApiTags('Hotels')
 @ApiCookieAuth('access_token')
@@ -219,5 +221,26 @@ export class HotelsController {
     @Param('roomId', ParseObjectIdPipe) roomId: string,
   ) {
     return this.roomsService.deactivateRoom(user, hotelId, roomId);
+  }
+
+  /**
+   * HTL-09/10: Update hotel times and cancellation policy.
+   */
+  @Put(':id/policies')
+  @Roles(Role.HotelModerator)
+  @ApiOperation({
+    summary: 'HTL-09/10: Set hotel policies',
+    description:
+      'The assigned hotel moderator sets check-in and check-out ' +
+      'times and cancellation tiers. Each cancellation threshold ' +
+      'must be a unique non-negative whole number. Refund selection ' +
+      'uses the highest threshold not exceeding days remaining.',
+  })
+  setHotelPolicies(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseObjectIdPipe) hotelId: string,
+    @Body() dto: PutHotelPoliciesDto,
+  ) {
+    return this.hotelsService.setPolicies(user, hotelId, dto);
   }
 }
