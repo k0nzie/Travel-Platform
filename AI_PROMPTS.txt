@@ -216,3 +216,19 @@ The implementation follows the existing NestJS architecture, reuses the hotel an
 Verification included **136 passing unit tests, 5 passing MongoDB integration tests**, successful typechecking, linting, and build, followed by Swagger and MongoDB Compass verification of search results, price and rating filters, blocked dates, and inactive-room exclusion.
 
 Booking-conflict checks involving confirmed reservations and pending payment holds were identified as dependencies for the upcoming hotel booking implementation.
+=========================================================================
+Date: 09/11/2026  
+AI Tool: ChatGPT (OpenAI)  
+Related Requirements: HTL-16, HTL-17, HTL-18
+
+**Prompt / Question:**
+
+How can a secure and reliable hotel booking system be implemented professionally in NestJS and MongoDB while integrating with existing hotel inventory and shared payment services? How can we validate multi-room reservations and guest occupancy, calculate and snapshot booking prices, prevent overlapping bookings through atomic MongoDB transactions, manage 10-minute payment holds, automatically release expired reservations, and confirm bookings safely after successful Stripe payments?
+
+**How AI Output Was Used:**
+
+AI-assisted technical consultation was used to design and implement the hotel booking module, reservation DTOs and schemas, atomic room reservation logic, booking lifecycle management, and integration with the existing hotel search and payment infrastructure.
+
+The implementation follows the project's NestJS architecture, shared booking status conventions, authentication and authorization requirements, and MongoDB transaction patterns.
+
+Verification included 146 passing unit tests, 6 passing isolated MongoDB integration tests, successful typechecking, linting, and production build. Swagger testing was also performed to validate the booking API behavior.

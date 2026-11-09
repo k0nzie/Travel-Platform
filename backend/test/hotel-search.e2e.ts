@@ -84,7 +84,7 @@ test('HTL-11/12/15: MongoDB search applies hotel status, blocks, dates, occupanc
     assert.equal(search.items[0].id, String(hotel._id));
     assert.equal(search.items[0].availableRoomCount, 3);
     assert.equal(search.items[0].cheapestQualifyingRoomPricePerNightMinor, 2500);
-    assert.equal(search.bookingConflictsChecked, false);
+    assert.equal(search.bookingConflictsChecked, true);
 
     const noRoom = await service.searchHotels({ ...base, guests: 8 });
     assert.equal(noRoom.total, 0);
@@ -114,7 +114,7 @@ test('HTL-11/12/15: MongoDB search applies hotel status, blocks, dates, occupanc
       ['Low', 'Medium', 'Large'],
     );
     assert.equal(roomList.items[1].totalStayPriceMinor, 4 * 2500);
-    assert.equal(roomList.bookingConflictsChecked, false);
+    assert.equal(roomList.bookingConflictsChecked, true);
     const page2 = await service.availableRooms(String(hotel._id), {
       checkIn: base.checkIn,
       checkOut: base.checkOut,

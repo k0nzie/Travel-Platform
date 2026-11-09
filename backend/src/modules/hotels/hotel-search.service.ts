@@ -7,6 +7,7 @@ import { AvailableHotelRoomsQueryDto, HotelSearchQueryDto, HotelSearchSort } fro
 import { cheapestFeasibleRoomPrice, isScheduleAvailable, validateHotelStay } from './hotel-search.logic';
 import { Hotel, HotelDocument, HotelStatus } from './schemas/hotel.schema';
 import { Room, RoomDocument, RoomStatus } from './schemas/room.schema';
+import { liveRoomReservationMatch } from './room-reservation.logic';
 
 @Injectable()
 export class HotelSearchService {
@@ -27,6 +28,7 @@ export class HotelSearchService {
         blockedRanges: {
           $not: { $elemMatch: { startDate: { $lt: checkOut }, endDate: { $gt: checkIn } } },
         },
+        reservationLocks: { $not: { $elemMatch: liveRoomReservationMatch(checkIn, checkOut) } },
       })
       .lean()
       .exec();
@@ -117,7 +119,7 @@ export class HotelSearchService {
       nights,
       guests: q.guests,
       requestedRooms: count,
-      bookingConflictsChecked: false,
+      bookingConflictsChecked: true,
     };
   }
 
@@ -157,7 +159,7 @@ export class HotelSearchService {
       checkIn: q.checkIn,
       checkOut: q.checkOut,
       nights,
-      bookingConflictsChecked: false,
+      bookingConflictsChecked: true,
     };
   }
 }

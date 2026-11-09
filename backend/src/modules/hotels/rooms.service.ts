@@ -17,6 +17,12 @@ import {
 
 import { Hotel, HotelDocument } from './schemas/hotel.schema';
 import { Room, RoomDocument, RoomStatus } from './schemas/room.schema';
+import { coversHotelStay } from './hotel-search.logic';
+import {
+  anyLiveRoomReservationMatch,
+  hasLiveRoomReservation,
+  liveRoomReservationMatch,
+} from './room-reservation.logic';
 
 @Injectable()
 export class RoomsService {
@@ -350,7 +356,25 @@ export class RoomsService {
 
     newRanges.sort((a, b) => a.startDate.localeCompare(b.startDate));
 
-    // Compare the entire previous schedule in the filter.
+    const originalLocks = (room.reservationLocks ?? []).map((lock) => ({
+      bookingId: lock.bookingId,
+      startDate: lock.startDate,
+      endDate: lock.endDate,
+      status: lock.status,
+      expiresAt: lock.expiresAt,
+    }));
+    const now = new Date();
+    for (const lock of room.reservationLocks ?? []) {
+      const live = lock.status === 'confirmed' || (lock.status === 'pending_payment' && lock.expiresAt > now);
+      if (live && !coversHotelStay(newRanges, lock.startDate, lock.endDate)) {
+        throw new ConflictException({
+          message: 'Availability cannot remove dates from an active reservation',
+          code: 'RESERVED_DATES_IMMUTABLE',
+        });
+      }
+    }
+
+    // Compare the entire previous schedule AND reservation locks in the filter.
     // If another request changed it since our read, the
     // update will not match, preventing a lost update.
     const updated = await this.rooms
@@ -359,6 +383,9 @@ export class RoomsService {
           _id: roomId,
           hotelId: hotelObjectId,
           availabilityRanges: originalRanges,
+          ...(originalLocks.length
+            ? { reservationLocks: originalLocks }
+            : { $or: [{ reservationLocks: { $exists: false } }, { reservationLocks: { $size: 0 } }] }),
         },
         {
           $set: {
@@ -454,6 +481,9 @@ export class RoomsService {
               },
             },
           },
+          reservationLocks: {
+            $not: { $elemMatch: liveRoomReservationMatch(dto.startDate, dto.endDate) },
+          },
         },
         {
           $push: {
@@ -484,6 +514,13 @@ export class RoomsService {
         throw new ConflictException({
           message: 'Cannot block an inactive room',
           code: 'ROOM_INACTIVE',
+        });
+      }
+
+      if (hasLiveRoomReservation(room.reservationLocks, dto.startDate, dto.endDate)) {
+        throw new ConflictException({
+          message: 'Cannot block dates covered by an active reservation',
+          code: 'ROOM_RESERVED',
         });
       }
 
@@ -526,6 +563,7 @@ export class RoomsService {
           _id: roomId,
           hotelId: hotelObjectId,
           status: RoomStatus.Active,
+          reservationLocks: { $not: { $elemMatch: anyLiveRoomReservationMatch() } },
         },
         {
           $set: {
@@ -549,6 +587,13 @@ export class RoomsService {
 
       if (!existing) {
         throw new NotFoundException('Room not found in this hotel');
+      }
+
+      if (existing.status === RoomStatus.Active) {
+        throw new ConflictException({
+          message: 'Room has active reservations and cannot be deactivated',
+          code: 'ROOM_RESERVED',
+        });
       }
 
       throw new ConflictException({

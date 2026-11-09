@@ -1,5 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument, Schema as MongooseSchema, Types } from 'mongoose';
+import { BookingStatus } from '../../../common/constants/enums';
 
 export enum RoomStatus {
   Active = 'active',
@@ -60,6 +61,26 @@ export class RoomBlockedRange {
 }
 
 export const RoomBlockedRangeSchema = SchemaFactory.createForClass(RoomBlockedRange);
+
+/** HTL-18: durable room-level claim, protected by atomic conditional writes. */
+@Schema({ _id: false })
+export class RoomReservationLock {
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'HotelBooking', required: true })
+  bookingId: Types.ObjectId;
+
+  @Prop({ required: true })
+  startDate: string;
+
+  @Prop({ required: true })
+  endDate: string;
+
+  @Prop({ type: String, required: true, enum: [BookingStatus.PendingPayment, BookingStatus.Confirmed] })
+  status: BookingStatus.PendingPayment | BookingStatus.Confirmed;
+
+  @Prop({ type: Date, required: true })
+  expiresAt: Date;
+}
+export const RoomReservationLockSchema = SchemaFactory.createForClass(RoomReservationLock);
 
 /**
  * Individual hotel room.
@@ -154,6 +175,10 @@ export class Room {
     default: [],
   })
   blockedRanges: RoomBlockedRange[];
+
+  /** Active holds and confirmed reservations, checked by HTL-11/15 and HTL-18. */
+  @Prop({ type: [RoomReservationLockSchema], default: [] })
+  reservationLocks: RoomReservationLock[];
 
   createdAt?: Date;
   updatedAt?: Date;

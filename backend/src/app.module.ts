@@ -1,4 +1,3 @@
-
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { APP_INTERCEPTOR } from '@nestjs/core';
@@ -17,6 +16,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { FlightBookingsModule } from './modules/flight-bookings/flight-bookings.module';
 import { FlightsModule } from './modules/flights/flights.module';
 import { HotelsModule } from './modules/hotels/hotels.module';
+import { HotelBookingsModule } from './modules/hotel-bookings/hotel-bookings.module';
 import { MediaModule } from './modules/media/media.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { PaymentsModule } from './modules/payments/payments.module';
@@ -65,7 +65,7 @@ import { UsersModule } from './modules/users/users.module';
     FlightBookingsModule, // Person 3
     PaymentsModule, // Person 3
     HotelsModule, // Person 4
-    // HotelBookingsModule,    // Person 4
+    HotelBookingsModule, // Person 4 — HTL-16/17/18
     // ItinerariesModule,      // Person 5
     // ExchangeRatesModule,    // Person 5
     // BlogModule,             // Person 6
