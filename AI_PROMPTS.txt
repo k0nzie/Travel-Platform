@@ -261,3 +261,36 @@ The isolated MongoDB integration test was extended to verify that confirmed, exp
 All changes were reviewed, committed as `45a437f`, and pushed to the HTL-20 feature branch.
 
 ================================================
+================================================
+
+Date: 10/11/2026
+
+Student: Mostafa Eltatawi
+
+AI Tool Used: ChatGPT (OpenAI)
+
+Related Requirements: HTL-21, HTL-10, PAY-03
+
+**Prompt / Question (summary of multi-turn discussion):**
+
+How can I implement a secure hotel booking cancellation and refund system in our existing NestJS and MongoDB backend?
+
+How should registered travellers preview the refund calculated from the hotel's saved cancellation policy before confirming cancellation? How can we ensure that only the booking owner can cancel a Confirmed reservation before check-in, that the entire multi-room reservation is cancelled together, and that partial cancellation is not allowed?
+
+How can MongoDB transactions guarantee that updating the booking status, releasing all reserved rooms, and creating the refund record happen atomically? How should the implementation integrate with the existing PaymentsService and Stripe refund mechanism while preventing double cancellations and duplicate refunds?
+
+What unit tests and isolated MongoDB integration tests should verify refund calculations, ownership restrictions, room availability after cancellation, refund persistence, and transaction rollback?
+
+**How AI Output Was Used:**
+
+Used ChatGPT's explanations and implementation guidance to develop the hotel cancellation preview and cancellation execution functionality.
+
+Added GET `/api/hotel-bookings/:id/cancellation-preview` and POST `/api/hotel-bookings/:id/cancel`, including traveller authorization, ownership verification, saved cancellation-tier calculations, and check-in deadline validation.
+
+Implemented transactional cancellation that updates the entire booking, releases all reserved rooms, and queues the applicable refund using the existing PaymentsService. Stripe refund dispatch occurs after the database transaction commits.
+
+Added cancellation tracking to the hotel booking schema and extended the automated tests. Verification included **148 passing unit tests**, successful isolated MongoDB integration tests covering refund persistence and rollback, successful TypeScript, lint and production build checks, and confirmation that both endpoints appear in Swagger.
+
+Actual Stripe refund processing was not performed during testing; external payment requests were mocked to protect shared and external systems.
+
+================================================

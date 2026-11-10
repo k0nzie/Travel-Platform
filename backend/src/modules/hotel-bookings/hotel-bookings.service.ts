@@ -29,7 +29,8 @@ import { PaymentsService } from '../payments/payments.service';
 import { AccountHooksService } from '../users/account-hooks.service';
 import { CreateHotelBookingDto } from './dto/hotel-booking.dto';
 import { HotelBooking, HotelBookingDocument } from './schemas/hotel-booking.schema';
-
+import { computeRefundPercent } from '../../common/utils/cancellation-tiers';
+import { daysUntil, parseDateOnly, todayUtc } from '../../common/utils/time.util';
 const HOLD_MINUTES = 10;
 const MAX_CRON_BATCH = 200;
 const REFERENCE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
@@ -381,6 +382,64 @@ export class HotelBookingsService implements OnModuleInit, BookingConfirmationHa
     };
   }
 
+  /** HTL-21: Calculate the refund without changing the booking. */
+  private computeCancellationRefund(booking: HotelBookingDocument) {
+    if (booking.status !== BookingStatus.Confirmed) {
+      throw new ConflictException({
+        message: 'Only confirmed hotel bookings can be cancelled',
+        code: 'BOOKING_NOT_CANCELLABLE',
+      });
+    }
+
+    const today = todayUtc();
+    const checkIn = parseDateOnly(booking.checkIn);
+
+    if (checkIn <= today) {
+      throw new ConflictException({
+        message: 'Cancellation is not allowed on or after the check-in date',
+        code: 'CHECK_IN_REACHED',
+      });
+    }
+
+    const daysRemaining = daysUntil(checkIn, today);
+    const refundPercent = computeRefundPercent(
+      booking.cancellationTiers,
+      daysRemaining,
+    );
+
+    return {
+      reference: booking.reference,
+      hotelName: booking.hotelName,
+      checkIn: booking.checkIn,
+      checkOut: booking.checkOut,
+      daysRemaining,
+      refundPercent,
+      totalMinor: booking.totalMinor,
+      refundMinor: Math.round(
+        (booking.totalMinor * refundPercent) / 100,
+      ),
+      currency: booking.currency,
+    };
+  }
+
+  /** HTL-21: Show the owner their refund before cancellation. */
+  async cancellationPreview(user: AuthUser, bookingId: string) {
+    this.assertTraveller(user);
+
+    const booking = await this.bookings.findById(bookingId).exec();
+
+    if (!booking) {
+      throw new NotFoundException('Booking not found');
+    }
+
+    assertOwner(booking.userId, user, {
+      allowAdmin: false,
+      resource: 'Booking',
+    });
+
+    return this.computeCancellationRefund(booking);
+  }
+
   /** HTL-17 confirmation page: the owner can fetch the updated booking status and reference. */
   async getOne(user: AuthUser, bookingId: string) {
     const booking = await this.bookings.findById(bookingId).exec();
@@ -389,6 +448,122 @@ export class HotelBookingsService implements OnModuleInit, BookingConfirmationHa
     return {
       ...this.toView(booking),
       payment: await this.payments.summaryForBooking(BookingType.Hotel, booking._id),
+    };
+  }
+
+  /** HTL-21: Cancel the entire confirmed reservation and queue its refund. */
+  async cancel(user: AuthUser, bookingId: string) {
+    this.assertTraveller(user);
+
+    const result = await this.connection.transaction(async (session) => {
+      const booking = await this.bookings
+        .findById(bookingId)
+        .session(session)
+        .exec();
+
+      if (!booking) {
+        throw new NotFoundException('Booking not found');
+      }
+
+      assertOwner(booking.userId, user, {
+        allowAdmin: false,
+        resource: 'Booking',
+      });
+
+      // Recalculate the refund inside the transaction.
+      const preview = this.computeCancellationRefund(booking);
+
+      // A second cancellation cannot change an already-cancelled booking.
+      const cancelled = await this.bookings
+        .findOneAndUpdate(
+          {
+            _id: booking._id,
+            userId: new Types.ObjectId(user.id),
+            status: BookingStatus.Confirmed,
+            checkIn: {
+              $gt: todayUtc().toISOString().slice(0, 10),
+            },
+          },
+          {
+            $set: {
+              status: BookingStatus.Cancelled,
+              cancelledAt: new Date(),
+              cancellation: {
+                cancelledBy: 'user',
+                refundMinor: preview.refundMinor,
+              },
+            },
+          },
+          { session, new: true },
+        )
+        .exec();
+
+      if (!cancelled) {
+        throw new ConflictException({
+          message: 'This booking can no longer be cancelled',
+          code: 'BOOKING_NOT_CANCELLABLE',
+        });
+      }
+
+      // Release every room from this reservation.
+      for (const room of cancelled.rooms) {
+        await this.inventory.release(
+          room.roomId,
+          cancelled._id,
+          session,
+        );
+      }
+
+      // Create the refund record in the SAME transaction.
+      const refundRecord = await this.payments.queueRefund(
+        BookingType.Hotel,
+        cancelled._id,
+        preview.refundMinor,
+        'user_cancelled',
+        session,
+      );
+
+      if (preview.refundMinor > 0 && !refundRecord) {
+        throw new ConflictException({
+          message: 'Your payment is still settling. Try again shortly.',
+          code: 'PAYMENT_SETTLING',
+        });
+      }
+
+      return {
+        cancelled,
+        refundRecord,
+        refundMinor: preview.refundMinor,
+      };
+    });
+
+    // Stripe is contacted ONLY after MongoDB commits successfully.
+    await this.payments.sendQueuedRefunds(result.refundRecord);
+
+    try {
+      await this.notifications.notify(result.cancelled.userId, {
+        type: NotificationType.BookingCancelled,
+        title: 'Hotel booking cancelled',
+        message: result.refundMinor > 0
+          ? `Booking ${result.cancelled.reference} was cancelled. Refund: ${(result.refundMinor / 100).toFixed(2)} ${result.cancelled.currency}.`
+          : `Booking ${result.cancelled.reference} was cancelled. No refund applies under the cancellation policy.`,
+        link: this.link(result.cancelled),
+        data: {
+          bookingId: String(result.cancelled._id),
+          reference: result.cancelled.reference,
+          refundMinor: result.refundMinor,
+        },
+      });
+    } catch (error) {
+      this.logger.error(
+        `Cancellation notification failed: ${(error as Error).message}`,
+      );
+    }
+
+    return {
+      ...this.toView(result.cancelled),
+      cancelledAt: result.cancelled.cancelledAt,
+      cancellation: result.cancelled.cancellation,
     };
   }
 

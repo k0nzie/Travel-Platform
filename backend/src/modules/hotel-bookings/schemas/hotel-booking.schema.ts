@@ -31,6 +31,21 @@ export class HotelBookedRoom {
 }
 export const HotelBookedRoomSchema = SchemaFactory.createForClass(HotelBookedRoom);
 
+@Schema({ _id: false })
+export class HotelBookingCancellation {
+  @Prop({ required: true, enum: ['user'] })
+  cancelledBy: 'user';
+
+  @Prop({ required: true, min: 0 })
+  refundMinor: number;
+
+  @Prop()
+  reason?: string;
+}
+
+const HotelBookingCancellationSchema =
+  SchemaFactory.createForClass(HotelBookingCancellation);
+
 /** Owns a reservation of one or more individually bookable rooms (HTL-16/17/18). */
 @Schema({ timestamps: true, collection: 'hotel_bookings' })
 export class HotelBooking {
@@ -91,6 +106,12 @@ export class HotelBooking {
 
   @Prop()
   expiredAt?: Date;
+
+  @Prop({ type: HotelBookingCancellationSchema })
+  cancellation?: HotelBookingCancellation;
+
+  @Prop()
+  cancelledAt?: Date;
 
   createdAt?: Date;
   updatedAt?: Date;

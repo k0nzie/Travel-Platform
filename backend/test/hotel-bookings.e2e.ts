@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { Connection, createConnection, Types } from 'mongoose';
 
-import { BookingStatus, ProviderType, Role } from '../src/common/constants/enums';
+import { BookingStatus, BookingType, ProviderType, Role } from '../src/common/constants/enums';
 import { HotelInventoryService } from '../src/modules/hotels/hotel-inventory.service';
 import { HotelSearchService } from '../src/modules/hotels/hotel-search.service';
 import { RoomsService } from '../src/modules/hotels/rooms.service';
@@ -12,9 +12,16 @@ import { Hotel, HotelSchema } from '../src/modules/hotels/schemas/hotel.schema';
 import { Room, RoomSchema } from '../src/modules/hotels/schemas/room.schema';
 import { HotelBookingsService } from '../src/modules/hotel-bookings/hotel-bookings.service';
 import { HotelBooking, HotelBookingSchema } from '../src/modules/hotel-bookings/schemas/hotel-booking.schema';
+import { PaymentsService } from '../src/modules/payments/payments.service';
+import {
+  Payment,
+  PaymentSchema,
+  PaymentStatus,
+  RefundStatus,
+} from '../src/modules/payments/schemas/payment.schema';
 
 /** All writes use an isolated replica set, NEVER shared Atlas. Transactions require a replica set. */
-test('HTL-16/17/18: real MongoDB multi-room holds are atomic, confirmed on payment, expire and exclude search', async () => {
+test('HTL-16/17/18/20/21: isolated MongoDB bookings, history and cancellation', async () => {
   const mongo = await MongoMemoryReplSet.create({ replSet: { count: 1, storageEngine: 'wiredTiger' } });
   let connection: Connection | undefined;
   try {
@@ -22,7 +29,8 @@ test('HTL-16/17/18: real MongoDB multi-room holds are atomic, confirmed on payme
     const Hotels = connection.model(Hotel.name, HotelSchema);
     const Rooms = connection.model(Room.name, RoomSchema);
     const Bookings = connection.model(HotelBooking.name, HotelBookingSchema);
-    await Promise.all([Hotels.init(), Rooms.init(), Bookings.init()]);
+    const Payments = connection.model(Payment.name, PaymentSchema);
+    await Promise.all([Hotels.init(), Rooms.init(), Bookings.init(), Payments.init()]);
 
     const hotelId = new Types.ObjectId();
     const userId = new Types.ObjectId();
@@ -320,6 +328,154 @@ test('HTL-16/17/18: real MongoDB multi-room holds are atomic, confirmed on payme
 
     assert.equal(strangerCancelled.total, 0);
 
+    // HTL-21: Use the real PaymentsService queueRefund against isolated MongoDB.
+    // Only the Stripe-dispatch method is mocked; no external payment call occurs.
+    const payment = await Payments.create({
+      _id: paymentId,
+      bookingType: BookingType.Hotel,
+      bookingId: new Types.ObjectId(pending.id),
+      userId,
+      bookingReference: pending.reference,
+      bookingLink: `/bookings/hotels/${pending.id}`,
+      amountMinor: 60000,
+      currency: 'USD',
+      status: PaymentStatus.Succeeded,
+      policiesAcceptedAt: new Date(),
+      policiesSnapshot: { cancellationTiers: [{ minDays: 7, refundPercent: 100 }] },
+      paidAt: new Date(),
+    });
+
+    const realPayments = new PaymentsService(
+      Payments as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+    );
+    const queueRefund = realPayments.queueRefund.bind(realPayments);
+    (service as any).payments.queueRefund = queueRefund;
+
+    let refundDispatchCalled = false;
+    (service as any).payments.sendQueuedRefunds = async (queuedPayment: any) => {
+      assert.equal(String(queuedPayment._id), String(payment._id));
+      assert.equal(queuedPayment.refunds.length, 1);
+      assert.equal(queuedPayment.refunds[0].amountMinor, 60000);
+      refundDispatchCalled = true;
+    };
+
+    const preview = await service.cancellationPreview(user, pending.id);
+    assert.equal(preview.refundPercent, 100);
+    assert.equal(preview.refundMinor, 60000);
+
+    const cancelledResult = await service.cancel(user, pending.id);
+
+    assert.equal(cancelledResult.status, BookingStatus.Cancelled);
+    assert.equal(cancelledResult.cancellation.refundMinor, 60000);
+    assert.equal(refundDispatchCalled, true);
+
+    // The refund is really queued in the payments collection, in the same transaction.
+    const storedPayment = await Payments.findById(payment._id).lean().exec();
+    assert.equal(storedPayment?.refunds.length, 1);
+    assert.equal(storedPayment?.refunds[0].amountMinor, 60000);
+    assert.equal(storedPayment?.refunds[0].reason, 'user_cancelled');
+    assert.equal(storedPayment?.refunds[0].status, RefundStatus.Queued);
+
+    const savedCancellation = await Bookings.findById(pending.id)
+      .lean()
+      .exec();
+
+    assert.equal(savedCancellation?.status, BookingStatus.Cancelled);
+    assert.ok(savedCancellation?.cancelledAt);
+
+    // BOTH rooms must be released, not just the first one.
+    const releasedRooms = await Rooms.find({
+      _id: { $in: [id1, id2] },
+    }).lean().exec();
+
+    for (const bookedRoom of releasedRooms) {
+      assert.equal(
+        bookedRoom.reservationLocks.some(
+          (lock) => String(lock.bookingId) === pending.id,
+        ),
+        false,
+      );
+    }
+
+    // The rooms should become available for the original dates.
+    const availableAgain = await search.availableRooms(
+      String(hotelId),
+      {
+        checkIn: '2027-02-01',
+        checkOut: '2027-02-03',
+        page: 1,
+        limit: 10,
+      },
+    );
+
+    assert.equal(availableAgain.total, 4);
+
+    // The same booking cannot be cancelled twice.
+    await assert.rejects(
+      service.cancel(user, pending.id),
+      (error: any) => error.getStatus() === 409,
+    );
+
+    // Another traveller cannot cancel this reservation.
+    await assert.rejects(
+      service.cancel(stranger, pending.id),
+      (error: any) => error.getStatus() === 404,
+    );
+
+    // HTL-21: If a failure happens AFTER queuing the refund, MongoDB must roll
+    // back the refund record, the booking status change, and both room releases.
+    const rollbackPending = await service.createHold(user, original);
+    const rollbackPaymentId = new Types.ObjectId();
+    assert.equal(await service.onPaymentSucceeded(rollbackPending.id, String(rollbackPaymentId)), true);
+    await Payments.create({
+      _id: rollbackPaymentId,
+      bookingType: BookingType.Hotel,
+      bookingId: new Types.ObjectId(rollbackPending.id),
+      userId,
+      bookingReference: rollbackPending.reference,
+      bookingLink: `/bookings/hotels/${rollbackPending.id}`,
+      amountMinor: 60000,
+      currency: 'USD',
+      status: PaymentStatus.Succeeded,
+      policiesAcceptedAt: new Date(),
+      policiesSnapshot: { cancellationTiers: [{ minDays: 7, refundPercent: 100 }] },
+      paidAt: new Date(),
+    });
+
+    (service as any).payments.queueRefund = async (...args: Parameters<PaymentsService['queueRefund']>) => {
+      const queued = await queueRefund(...args);
+      assert.ok(queued, 'A refund record must be inserted before the simulated failure');
+      throw new Error('INTENTIONAL_REFUND_TRANSACTION_FAILURE');
+    };
+    try {
+      await assert.rejects(
+        service.cancel(user, rollbackPending.id),
+        /INTENTIONAL_REFUND_TRANSACTION_FAILURE/,
+      );
+    } finally {
+      (service as any).payments.queueRefund = queueRefund;
+    }
+
+    const bookingAfterRollback = await Bookings.findById(rollbackPending.id).lean().exec();
+    assert.equal(bookingAfterRollback?.status, BookingStatus.Confirmed);
+    assert.equal(bookingAfterRollback?.cancelledAt, undefined);
+    assert.equal(bookingAfterRollback?.cancellation, undefined);
+    for (const bookedRoom of await Rooms.find({ _id: { $in: [id1, id2] } }).lean().exec()) {
+      assert.ok(
+        bookedRoom.reservationLocks.some(
+          (lock) =>
+            String(lock.bookingId) === rollbackPending.id && lock.status === BookingStatus.Confirmed,
+        ),
+      );
+    }
+    const paymentAfterRollback = await Payments.findById(rollbackPaymentId).lean().exec();
+    assert.equal(paymentAfterRollback?.status, PaymentStatus.Succeeded);
+    assert.equal(paymentAfterRollback?.refunds.length, 0);
   } finally {
     if (connection) await connection.close();
     await mongo.stop();

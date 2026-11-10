@@ -364,3 +364,73 @@ test('HTL-20: booking history is owner-scoped, grouped and paginated', async () 
     [Role.User],
   );
 });
+
+test('HTL-21: cancellation preview checks owner, status, date and refund', async () => {
+  const { service } = bookingService();
+  const bookingId = String(new Types.ObjectId());
+
+  const booking: any = {
+    _id: new Types.ObjectId(bookingId),
+    userId: new Types.ObjectId(userId),
+    reference: 'HTL-TEST1234',
+    hotelName: 'Example Hotel',
+    status: BookingStatus.Confirmed,
+    checkIn: new Date(Date.now() + 30 * 86400000)
+      .toISOString()
+      .slice(0, 10),
+    checkOut: '2027-12-31',
+    totalMinor: 60000,
+    currency: 'USD',
+    cancellationTiers: [
+      { minDays: 7, refundPercent: 80 },
+      { minDays: 0, refundPercent: 25 },
+    ],
+  };
+
+  (service as any).bookings.findById = () => ({
+    exec: async () => booking,
+  });
+
+  // The correct cancellation tier applies to the full booking.
+  const preview = await service.cancellationPreview(user, bookingId);
+
+  assert.equal(preview.refundPercent, 80);
+  assert.equal(preview.totalMinor, 60000);
+  assert.equal(preview.refundMinor, 48000);
+  assert.equal(preview.currency, 'USD');
+
+  // A different traveller cannot view another user's refund.
+  await assert.rejects(
+    service.cancellationPreview(
+      { ...user, id: String(new Types.ObjectId()) },
+      bookingId,
+    ),
+    (error: any) => error.getStatus() === 404,
+  );
+
+  // Only confirmed bookings can be cancelled.
+  booking.status = BookingStatus.PendingPayment;
+
+  await assert.rejects(
+    service.cancellationPreview(user, bookingId),
+    (error: any) => error.getStatus() === 409,
+  );
+
+  // Cancellation is forbidden on the check-in date.
+  booking.status = BookingStatus.Confirmed;
+  booking.checkIn = new Date().toISOString().slice(0, 10);
+
+  await assert.rejects(
+    service.cancellationPreview(user, bookingId),
+    (error: any) => error.getStatus() === 409,
+  );
+
+  // Hotel moderators cannot use the traveller endpoint.
+  await assert.rejects(
+    service.cancellationPreview(
+      { ...user, role: Role.HotelModerator },
+      bookingId,
+    ),
+    (error: any) => error.getStatus() === 403,
+  );
+});

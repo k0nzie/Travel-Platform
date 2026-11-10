@@ -40,6 +40,32 @@ export class HotelBookingsController {
     return this.bookings.list(user, query);
   }
 
+  @Post(':id/cancel')
+  @Roles(Role.User)
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'HTL-21: Cancel an entire confirmed hotel booking and process its refund',
+  })
+  cancel(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseObjectIdPipe) id: string,
+  ) {
+    return this.bookings.cancel(user, id);
+  }
+
+
+  @Get(':id/cancellation-preview')
+  @Roles(Role.User)
+  @ApiOperation({
+    summary: 'HTL-21: Preview refund before cancelling a hotel booking',
+  })
+  cancellationPreview(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseObjectIdPipe) id: string,
+  ) {
+    return this.bookings.cancellationPreview(user, id);
+  }
+
 
   @Get(':id')
   @ApiOperation({ summary: 'HTL-17: Hotel booking details and payment-confirmed status (owner or admin)' })
