@@ -217,8 +217,8 @@ Verification included **136 passing unit tests, 5 passing MongoDB integration te
 
 Booking-conflict checks involving confirmed reservations and pending payment holds were identified as dependencies for the upcoming hotel booking implementation.
 =========================================================================
-Date: 09/11/2026
-AI Tool: ChatGPT (OpenAI)
+Date: 09/11/2026  
+AI Tool: ChatGPT (OpenAI)  
 Related Requirements: HTL-16, HTL-17, HTL-18
 
 **Prompt / Question:**
@@ -232,3 +232,32 @@ AI-assisted technical consultation was used to design and implement the hotel bo
 The implementation follows the project's NestJS architecture, shared booking status conventions, authentication and authorization requirements, and MongoDB transaction patterns.
 
 Verification included 146 passing unit tests, 6 passing isolated MongoDB integration tests, successful typechecking, linting, and production build. Swagger testing was also performed to validate the booking API behavior.
+================================================
+
+Date: 10/11/2026
+
+Student: Mostafa Eltatawi
+
+AI Tool Used: ChatGPT (OpenAI)
+
+Related Requirement: HTL-20 — View Hotel Reservations
+
+**Prompt / Question (summary of multi-turn discussion):**
+
+How can I implement a secure hotel booking history feature in our existing NestJS and MongoDB backend? How should registered travellers view their own hotel reservations grouped into Upcoming, Past, and Cancelled, with booking reference, hotel information, reserved rooms, dates, guests, total price, and booking status?
+
+How can I implement filtering and pagination using our existing shared utilities, protect booking information from other users, reuse the existing booking details endpoint, and verify the functionality through unit tests, isolated MongoDB integration tests, and Swagger?
+
+**How AI Output Was Used:**
+
+AI-assisted guidance was used to implement the hotel booking history query DTO, booking listing service, and authenticated GET `/api/hotel-bookings` endpoint.
+
+The implementation supports Upcoming, Past, and Cancelled grouping, optional status filtering, pagination, and owner-based access restrictions. Existing booking details functionality was reused.
+
+Verification included **147 passing automated unit tests**, successful TypeScript and lint checks, and Swagger testing of all three booking groups.
+
+The isolated MongoDB integration test was extended to verify that confirmed, expired, and cancelled reservations appear in the appropriate booking history, and that other travellers cannot access another user's reservations.
+
+All changes were reviewed, committed as `45a437f`, and pushed to the HTL-20 feature branch.
+
+================================================
