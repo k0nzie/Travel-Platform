@@ -82,3 +82,21 @@ accept those ids. Added the ACC-15 provider (de)activation endpoints for airline
 notifications, audit logging and an e2e test; airlines use active/inactive. Restored .env.example
 and updated the work split.
 ================================================
+================================================
+Date: 2026-11-11
+Student: Omar (Person 5)
+Tool: Claude
+Related Requirement: ITN-01, ITN-03, ITN-05, ITN-07, ITN-08, ITN-09, ITN-10, ITN-12, ITN-14, ITN-16, ITN-18, ITN-20, ITN-21, ITN-25, ITN-26
+Prompt:
+I am Person 5 (Itineraries, Budgeting & Exchange Rates) and must finish my requirements today.
+Read the project PDF (section 8.8), docs/WORK_SPLIT.md and docs/CONVENTIONS.md and implement the
+Itineraries and ExchangeRates modules following the team's existing patterns, then explain the code.
+How the output was used:
+Generated the itineraries module (itinerary CRUD + visibility, embedded ordered days with derived
+day numbers/dates and city grouping, activities with images via MediaService, budget entries,
+intercity transport costs, converted budget summary, public search, clone with attribution,
+hotel/flight search from the itinerary) and the exchange-rates module (FXRatesAPI through the
+backend with a daily MongoDB cache, stale fallback and 503 FX_UNAVAILABLE). ITN-25 uses an
+ItineraryHooksService that HotelsModule registers with. Reviewed the code, added unit tests for the
+day logic and currency maths, and checked every endpoint appears in Swagger.
+================================================
