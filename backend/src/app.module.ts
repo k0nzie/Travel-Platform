@@ -23,7 +23,7 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
 import { PaymentsModule } from './modules/payments/payments.module';
 import { ReferenceDataModule } from './modules/reference-data/reference-data.module';
 import { UsersModule } from './modules/users/users.module';
-import { FlightsModule } from './modules/flights/flights.module';
+import { BlogModule } from './modules/blog/blog.module';
 import { ItinerariesModule } from './modules/itineraries/itineraries.module';
 import { ExchangeRatesModule } from './modules/exchange-rates/exchange-rates.module';
 
@@ -66,6 +66,7 @@ import { ExchangeRatesModule } from './modules/exchange-rates/exchange-rates.mod
 
     // ---- Teammates add their modules below ----
     FlightsModule, // Person 2
+    BlogModule, // Person 6A
     FlightBookingsModule, // Person 3
     PaymentsModule, // Person 3
     HotelsModule, // Person 4

@@ -346,3 +346,12 @@ hotel/flight search from the itinerary) and the exchange-rates module (FXRatesAP
 backend with a daily MongoDB cache, stale fallback and 503 FX_UNAVAILABLE). ITN-25 uses an
 ItineraryHooksService that HotelsModule registers with. Reviewed the code, added unit tests for the
 day logic and currency maths, and checked every endpoint appears in Swagger.
+
+Date: 2026-11-18
+Student: Person 6A
+Tool: ChatGPT
+Related Requirements: BLG-01 to BLG-10, BLG-12
+Prompt:
+Review the existing NestJS backend and help implement the Blog & Community requirements using the team's existing authentication, media, and database conventions.
+How the output was used:
+Used AI assistance to draft and integrate the Blog module schemas, DTOs, service, controllers, API documentation, and route registration. The student must review, test, and understand the implementation before submission.
