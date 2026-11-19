@@ -9,6 +9,10 @@ export class Comment {
   author: Types.ObjectId;
   @Prop({ required: true, trim: true, minlength: 1, maxlength: 2000 })
   content: string;
+
+  /** GEN-10: hidden by an administrator after a report is resolved. */
+  @Prop({ default: false, index: true })
+  hidden: boolean;
 }
 export const CommentSchema = SchemaFactory.createForClass(Comment);
 CommentSchema.index({ post: 1, createdAt: -1 });

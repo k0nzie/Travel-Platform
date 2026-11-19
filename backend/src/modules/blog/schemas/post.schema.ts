@@ -18,6 +18,10 @@ export class Post {
   @Prop({ type: String, enum: Object.values(PostStatus), default: PostStatus.Draft, index: true })
   status: PostStatus;
 
+  /** GEN-10: hidden by an administrator after a report is resolved. */
+  @Prop({ default: false, index: true })
+  hidden: boolean;
+
   @Prop({ type: [String], default: [], index: true })
   tags: string[];
 
