@@ -16,13 +16,19 @@ export enum FlightStatus {
 const positive = { validator: (v: number) => v > 0, message: 'Must be > 0' };
 const integer = { validator: Number.isSafeInteger, message: 'Must be a safe integer' };
 
-/** Subdocument _id is the cabinId for PATCH /flights/:id/cabins/:cabinId. Policies live on the Airline. */
+/**
+ * Subdocument _id is the cabinId for PATCH /flights/:id/cabins/:cabinId.
+ * FLT-04: free baggage allowance per cabin; when not set, the airline's per-cabin allowance applies.
+ * Extra-bag price and maximum stay on the Airline (FLT-08).
+ */
 @Schema()
 export class Cabin {
   _id?: Types.ObjectId;
   @Prop({ required: true, enum: CabinType, type: String }) cabin: CabinType;
   @Prop({ required: true, validate: [integer, positive] }) capacity: number;
   @Prop({ required: true, validate: positive }) price: number;
+  @Prop({ min: 0, validate: integer }) freeBags?: number;
+  @Prop({ validate: positive }) maxWeightKg?: number;
   @Prop({ default: 0, min: 0, validate: integer }) held: number;
   @Prop({ default: 0, min: 0, validate: integer }) booked: number;
 }

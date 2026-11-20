@@ -388,5 +388,5 @@ content, booking filters by status and date range, hotel deactivation wired into
 official path aliases, available rooms on the details page when dates are given, hidden reviews
 excluded from the rating. Itineraries: 100-character titles, 60-day limit, keyword search over
 title/countries/cities, hidden flag. Merged the duplicate "test" script so all 168 unit tests run.
-Added scripts/api-smoke-test.mjs (npm run test:api). Verified with tsc, lint, unit tests and a
+Wrote an API smoke-test script, kept locally only (not committed). Verified with tsc, lint, unit tests and a
 dependency-injection boot check; reviewed every change.

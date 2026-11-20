@@ -89,6 +89,8 @@ export function activityResponse(a: any, images: ImageResponse[]) {
           name: a.attractionName as string,
         }
       : null,
+    costMinor: (a.costMinor ?? null) as number | null,
+    costCurrency: (a.costCurrency ?? null) as string | null,
     images,
     createdAt: a.createdAt as Date | undefined,
     updatedAt: a.updatedAt as Date | undefined,
@@ -118,6 +120,7 @@ export function transportCostResponse(t: any) {
     from: { cityId: String(t.fromCityId), cityCode: t.fromCityCode as string, cityName: t.fromCityName as string },
     to: { cityId: String(t.toCityId), cityCode: t.toCityCode as string, cityName: t.toCityName as string },
     mode: t.mode as string,
+    dayId: t.dayId ? String(t.dayId) : null,
     travelDate: t.travelDate ? isoDay(t.travelDate) : null,
     description: (t.description ?? null) as string | null,
     amountMinor: t.amountMinor as number,

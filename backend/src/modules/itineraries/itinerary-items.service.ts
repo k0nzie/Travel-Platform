@@ -86,6 +86,7 @@ export class ItineraryItemsService {
       endTime: dto.endTime,
       location: dto.location,
       ...(attraction ?? {}),
+      ...(await this.activityCost(it.budgetCurrency, dto.costMinor, dto.costCurrency)),
     });
     await this.touch(it._id);
     return activityResponse(doc.toObject(), []);
@@ -101,6 +102,17 @@ export class ItineraryItemsService {
     for (const key of ['title', 'description', 'startTime', 'endTime', 'location'] as const) {
       if (dto[key] !== undefined) set[key] = dto[key];
     }
+    if (dto.costMinor !== undefined || dto.costCurrency !== undefined) {
+      const it = await this.itineraries.findById(activity.itineraryId).select('budgetCurrency').lean().exec();
+      Object.assign(
+        set,
+        await this.activityCost(
+          it?.budgetCurrency,
+          dto.costMinor ?? activity.costMinor,
+          dto.costCurrency ?? activity.costCurrency,
+        ),
+      );
+    }
     if (dto.attractionId !== undefined) {
       if (dto.attractionId === '') {
         Object.assign(set, { attractionId: null, attractionCode: null, attractionName: null });
@@ -114,6 +126,19 @@ export class ItineraryItemsService {
     const updated = await this.activities.findByIdAndUpdate(activity._id, { $set: set }, { new: true }).lean().exec();
     await this.touch(activity.itineraryId);
     return activityResponse(updated, await this.media.list(MediaOwnerType.Activity, activity._id));
+  }
+
+  /** ITN-10: optional cost; its currency defaults to the itinerary's budget currency. */
+  private async activityCost(budgetCurrency: string | undefined, costMinor?: number, costCurrency?: string) {
+    if (costMinor === undefined || costMinor === null) return {};
+    const currency = costCurrency ?? budgetCurrency;
+    if (!currency) {
+      throw new BadRequestException({
+        message: 'Give the cost a currency',
+        errors: [{ field: 'costCurrency', messages: ['Required when the itinerary has no budget currency'] }],
+      });
+    }
+    return { costMinor, costCurrency: await this.reference.assertSupportedCurrency(currency) };
   }
 
   async deleteActivity(user: AuthUser, id: string) {
@@ -170,7 +195,11 @@ export class ItineraryItemsService {
         errors: [{ field: 'attractionId', messages: ["Attraction must be in the day's city"] }],
       });
     }
-    return { attractionId: attraction._id, attractionCode: attraction.code ?? String(attraction._id), attractionName: attraction.name };
+    return {
+      attractionId: attraction._id,
+      attractionCode: attraction.code ?? String(attraction._id),
+      attractionName: attraction.name,
+    };
   }
 
   // ---------- budget entries (ITN-14) ----------
@@ -220,6 +249,7 @@ export class ItineraryItemsService {
   async addTransport(user: AuthUser, itineraryId: string, dto: CreateTransportCostDto) {
     const it = await this.ownedItinerary(user, itineraryId);
     const fields = await this.transportFields(dto);
+    if (dto.dayId) fields.dayId = this.findDay(it, dto.dayId)._id;
     const doc = await this.transport.create({ itineraryId: it._id, ownerId: it.ownerId, ...fields });
     await this.touch(it._id);
     return transportCostResponse(doc.toObject());
@@ -234,6 +264,11 @@ export class ItineraryItemsService {
       toCityId: dto.toCityId ?? String(cost.toCityId),
     };
     const set: Record<string, unknown> = await this.transportFields({ ...dto, ...merged }, true);
+    if (dto.dayId !== undefined) {
+      const it = await this.itineraries.findById(cost.itineraryId).exec();
+      if (!it) throw new NotFoundException('Itinerary not found');
+      set.dayId = this.findDay(it, dto.dayId)._id;
+    }
     const updated = await this.transport.findByIdAndUpdate(cost._id, { $set: set }, { new: true }).lean().exec();
     await this.touch(cost.itineraryId);
     return transportCostResponse(updated);
@@ -299,14 +334,23 @@ export class ItineraryItemsService {
     }
     display = display ?? 'USD';
 
-    const [entries, costs] = await Promise.all([
+    const [entries, costs, costedActivities] = await Promise.all([
       this.budgets.find({ itineraryId: it._id }).lean().exec(),
       this.transport.find({ itineraryId: it._id }).lean().exec(),
+      this.activities
+        .find({ itineraryId: it._id, costMinor: { $gt: 0 } })
+        .select('dayId costMinor costCurrency')
+        .lean()
+        .exec(),
     ]);
-    const conv = await this.fx.converter(display, [...entries.map((e) => e.currency), ...costs.map((c) => c.currency)]);
+    const conv = await this.fx.converter(display, [
+      ...entries.map((e) => e.currency),
+      ...costs.map((c) => c.currency),
+      ...costedActivities.map((a) => a.costCurrency!),
+    ]);
 
     const byCategory: Record<string, number> = Object.fromEntries(Object.values(BudgetCategory).map((c) => [c, 0]));
-    const { days } = derive(it);
+    const { days, cityGroups } = derive(it);
     const byDay = new Map(days.map((d) => [d.id, { ...d, totalMinor: 0, byCategory: { ...byCategory } }]));
 
     for (const e of entries) {
@@ -318,10 +362,22 @@ export class ItineraryItemsService {
         day.byCategory[e.category] += amount;
       }
     }
+    // ITN-14: activity costs (ITN-10) count under Activities.
+    for (const a of costedActivities) {
+      const amount = conv.toDisplay(a.costMinor!, a.costCurrency!);
+      byCategory[BudgetCategory.Activities] += amount;
+      const day = byDay.get(String(a.dayId));
+      if (day) {
+        day.totalMinor += amount;
+        day.byCategory[BudgetCategory.Activities] += amount;
+      }
+    }
     let transportMinor = 0;
     const transportItems = costs.map((c) => {
       const amount = conv.toDisplay(c.amountMinor, c.currency);
       transportMinor += amount;
+      const day = c.dayId ? byDay.get(String(c.dayId)) : undefined;
+      if (day) day.totalMinor += amount; // ITN-16: shown on its day as well
       return { ...transportCostResponse(c), convertedMinor: amount };
     });
     const dailyMinor = Object.values(byCategory).reduce((a, b) => a + b, 0);
@@ -342,6 +398,15 @@ export class ItineraryItemsService {
         cityName: d.cityName,
         totalMinor: d.totalMinor,
         byCategoryMinor: d.byCategory,
+      })),
+      // ITN-09: each stretch of consecutive days in one city, with its day count and budget subtotal.
+      cityGroups: cityGroups.map((g) => ({
+        cityId: g.cityId,
+        cityName: g.cityName,
+        startDate: g.startDate,
+        endDate: g.endDate,
+        dayCount: g.dayCount,
+        subtotalMinor: g.dayIds.reduce((sum, dayId) => sum + (byDay.get(dayId)?.totalMinor ?? 0), 0),
       })),
       transport: transportItems,
     };
@@ -423,6 +488,8 @@ export class ItineraryItemsService {
         attractionId: a.attractionId,
         attractionCode: a.attractionCode,
         attractionName: a.attractionName,
+        costMinor: a.costMinor,
+        costCurrency: a.costCurrency,
       });
       await this.media.copyAll(MediaOwnerType.Activity, a._id, copy._id, String(newOwnerId));
     }
@@ -448,6 +515,7 @@ export class ItineraryItemsService {
       toCityCode: c.toCityCode,
       toCityName: c.toCityName,
       mode: c.mode,
+      dayId: c.dayId ? dayMap.get(String(c.dayId)) : undefined,
       travelDate: c.travelDate,
       description: c.description,
       amountMinor: c.amountMinor,

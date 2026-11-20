@@ -208,7 +208,10 @@ export class ItinerariesController {
   }
 
   @Get(':id/flights')
-  @ApiOperation({ summary: 'ITN-26: flights for a move between itinerary cities, on the right date' })
+  @ApiOperation({
+    summary:
+      'ITN-26: flights from an origin airport to the first itinerary city (one-way or round trip), or between itinerary cities',
+  })
   flights(
     @CurrentUser() user: AuthUser,
     @Param('id', ParseObjectIdPipe) id: string,

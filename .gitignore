@@ -17,3 +17,6 @@ backend/uploads/*
 .idea/
 .vscode/
 npm-debug.log*
+
+# Local-only test scripts (not shared on GitHub)
+backend/scripts/api-smoke-test.mjs
