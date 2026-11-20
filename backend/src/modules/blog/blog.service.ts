@@ -31,7 +31,7 @@ export class BlogService {
 
   async listPublished(page = 1, limit = 10, tag?: string) {
     const p = Math.max(1, Number(page) || 1), l = Math.min(50, Math.max(1, Number(limit) || 10));
-    const filter: Record<string, any> = { status: PostStatus.Published };
+    const filter: Record<string, any> = { status: PostStatus.Published, hidden: { $ne: true } };
     if (tag) filter.tags = tag.trim().toLowerCase();
     const [posts, total] = await Promise.all([
       this.posts.find(filter).populate('author', 'name').sort({ publishedAt: -1 }).skip((p - 1) * l).limit(l).lean().exec(),
@@ -45,12 +45,12 @@ export class BlogService {
   }
 
   async getPost(postId: string): Promise<any> {
-    const post = await this.posts.findOne({ _id: this.id(postId, 'post ID'), status: PostStatus.Published })
+    const post = await this.posts.findOne({ _id: this.id(postId, 'post ID'), status: PostStatus.Published, hidden: { $ne: true } })
       .populate('author', 'name').lean().exec();
     if (!post) throw new NotFoundException('Post not found');
     const [images, likes, comments] = await Promise.all([
       this.media.list(MediaOwnerType.Post, post._id), this.likes.countDocuments({ post: post._id }),
-      this.comments.countDocuments({ post: post._id }),
+      this.comments.countDocuments({ post: post._id, hidden: { $ne: true } }),
     ]);
     return { ...post, images, likeCount: likes, commentCount: comments };
   }
@@ -78,10 +78,22 @@ export class BlogService {
     return { deleted: true };
   }
 
+  /** GEN-10: AdminService authorizes moderation; the blog module owns cascading cleanup. */
+  async deleteContentForModeration(postId: string) {
+    const id = this.id(postId, 'post ID');
+    await Promise.all([
+      this.media.removeAllFor(MediaOwnerType.Post, id),
+      this.comments.deleteMany({ post: id }).exec(),
+      this.likes.deleteMany({ post: id }).exec(),
+      this.posts.deleteOne({ _id: id }).exec(),
+    ]);
+    return { deleted: true };
+  }
+
   async search(keyword: string, page = 1, limit = 10) {
     if (!keyword?.trim()) return this.listPublished(page, limit);
     const p = Math.max(1, Number(page) || 1), l = Math.min(50, Math.max(1, Number(limit) || 10));
-    const filter = { status: PostStatus.Published, $text: { $search: keyword.trim() } };
+    const filter = { status: PostStatus.Published, hidden: { $ne: true }, $text: { $search: keyword.trim() } };
     const [posts, total] = await Promise.all([
       this.posts.find(filter, { score: { $meta: 'textScore' } }).populate('author', 'name')
         .sort({ score: { $meta: 'textScore' }, publishedAt: -1 }).skip((p - 1) * l).limit(l).lean().exec(),
@@ -97,23 +109,23 @@ export class BlogService {
     const p = Math.max(1, Number(page) || 1), l = Math.min(50, Math.max(1, Number(limit) || 10));
     const [profile, posts, total] = await Promise.all([
       this.posts.db.collection('users').findOne({ _id: author }, { projection: { name: 1, createdAt: 1 } }),
-      this.posts.find({ author, status: PostStatus.Published }).sort({ publishedAt: -1 }).skip((p - 1) * l).limit(l).lean().exec(),
-      this.posts.countDocuments({ author, status: PostStatus.Published }),
+      this.posts.find({ author, status: PostStatus.Published, hidden: { $ne: true } }).sort({ publishedAt: -1 }).skip((p - 1) * l).limit(l).lean().exec(),
+      this.posts.countDocuments({ author, status: PostStatus.Published, hidden: { $ne: true } }),
     ]);
     if (!profile) throw new NotFoundException('Author not found');
     return { author: { id: String(profile._id), name: profile.name }, posts, total, page: p, limit: l, totalPages: Math.ceil(total / l) };
   }
 
   async addComment(userId: string, postId: string, content: string) {
-    const post = await this.posts.findOne({ _id: this.id(postId, 'post ID'), status: PostStatus.Published }).select('_id').lean().exec();
+    const post = await this.posts.findOne({ _id: this.id(postId, 'post ID'), status: PostStatus.Published, hidden: { $ne: true } }).select('_id').lean().exec();
     if (!post) throw new NotFoundException('Post not found');
     return this.comments.create({ post: post._id, author: this.id(userId, 'user ID'), content: content.trim() });
   }
   async listComments(postId: string) {
     const id = this.id(postId, 'post ID');
-    const postExists = await this.posts.exists({ _id: id, status: PostStatus.Published });
+    const postExists = await this.posts.exists({ _id: id, status: PostStatus.Published, hidden: { $ne: true } });
     if (!postExists) throw new NotFoundException('Post not found');
-    return this.comments.find({ post: id }).populate('author', 'name').sort({ createdAt: -1 }).lean().exec();
+    return this.comments.find({ post: id, hidden: { $ne: true } }).populate('author', 'name').sort({ createdAt: -1 }).lean().exec();
   }
   async updateComment(userId: string, commentId: string, content: string) {
     const comment = await this.comments.findOneAndUpdate({ _id: this.id(commentId, 'comment ID'), author: this.id(userId, 'user ID') },
@@ -127,7 +139,7 @@ export class BlogService {
     return { deleted: true };
   }
   async toggleLike(userId: string, postId: string) {
-    const post = await this.posts.findOne({ _id: this.id(postId, 'post ID'), status: PostStatus.Published }).select('_id').lean().exec();
+    const post = await this.posts.findOne({ _id: this.id(postId, 'post ID'), status: PostStatus.Published, hidden: { $ne: true } }).select('_id').lean().exec();
     if (!post) throw new NotFoundException('Post not found');
     const filter = { post: post._id, user: this.id(userId, 'user ID') };
     const existing = await this.likes.findOne(filter).exec();
@@ -139,6 +151,8 @@ export class BlogService {
   }
   async likeCount(postId: string) {
     const id = this.id(postId, 'post ID');
+    const post = await this.posts.exists({ _id: id, status: PostStatus.Published, hidden: { $ne: true } });
+    if (!post) throw new NotFoundException('Post not found');
     return { postId, count: await this.likes.countDocuments({ post: id }) };
   }
   async uploadImages(userId: string, postId: string, files: Express.Multer.File[]) {
@@ -148,7 +162,7 @@ export class BlogService {
   }
   async listImages(postId: string) {
     const id = this.id(postId, 'post ID');
-    const post = await this.posts.findOne({ _id: id, status: PostStatus.Published }).select('_id').lean().exec();
+    const post = await this.posts.findOne({ _id: id, status: PostStatus.Published, hidden: { $ne: true } }).select('_id').lean().exec();
     if (!post) throw new NotFoundException('Post not found');
     return this.media.list(MediaOwnerType.Post, id);
   }

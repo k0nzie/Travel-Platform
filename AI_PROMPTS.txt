@@ -355,3 +355,17 @@ Prompt:
 Review the existing NestJS backend and help implement the Blog & Community requirements using the team's existing authentication, media, and database conventions.
 How the output was used:
 Used AI assistance to draft and integrate the Blog module schemas, DTOs, service, controllers, API documentation, and route registration. The student must review, test, and understand the implementation before submission.
+
+Date: 2026-11-19
+Student: Person 6B
+Tool: ChatGPT
+Related Requirements: GEN-09, GEN-10, ACC-13, ACC-14, ACC-15, ACC-16, ACC-17
+Prompt:
+Inspect the existing Travel Platform repository and implement Person 6B only: content reports and
+moderation, moderator creation, account listing/filtering, suspension/reactivation, and admin
+booking views. Reuse the existing Person 6A blog module and shared services, document the API, and
+work on a branch from the latest develop.
+How the output was used:
+Integrated a moderation report schema and admin endpoints with the existing NestJS auth, users,
+audit, notifications, bookings, and blog modules. Added hidden-content filtering to public blog
+reads and documented the endpoints and setup. Build and tests are to be recorded after validation.
