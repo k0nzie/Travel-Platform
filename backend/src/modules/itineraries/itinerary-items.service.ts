@@ -170,7 +170,7 @@ export class ItineraryItemsService {
         errors: [{ field: 'attractionId', messages: ["Attraction must be in the day's city"] }],
       });
     }
-    return { attractionId: attraction._id, attractionCode: attraction.code, attractionName: attraction.name };
+    return { attractionId: attraction._id, attractionCode: attraction.code ?? String(attraction._id), attractionName: attraction.name };
   }
 
   // ---------- budget entries (ITN-14) ----------
@@ -262,10 +262,10 @@ export class ItineraryItemsService {
     }
     Object.assign(out, {
       fromCityId: from._id,
-      fromCityCode: from.code,
+      fromCityCode: from.code ?? String(from._id),
       fromCityName: from.name,
       toCityId: to._id,
-      toCityCode: to.code,
+      toCityCode: to.code ?? String(to._id),
       toCityName: to.name,
     });
     if (!partial || dto.mode !== undefined) out.mode = dto.mode;

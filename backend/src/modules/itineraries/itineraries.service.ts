@@ -164,7 +164,7 @@ export class ItinerariesService {
     const city = await this.reference.resolveCity(dto.cityId);
     it.days.splice(index, 0, {
       cityId: city._id,
-      cityCode: city.code,
+      cityCode: city.code ?? String(city._id), // legacy cities without an official code
       cityName: city.name,
       countryCode: city.countryCode,
       title: dto.title,
@@ -183,7 +183,7 @@ export class ItinerariesService {
       const city = await this.reference.resolveCity(dto.cityId);
       Object.assign(day, {
         cityId: city._id,
-        cityCode: city.code,
+        cityCode: city.code ?? String(city._id), // legacy cities without an official code
         cityName: city.name,
         countryCode: city.countryCode,
       });

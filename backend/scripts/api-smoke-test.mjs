@@ -111,7 +111,7 @@ async function check(name, expected, fn, extra) {
     if (!ok) throw new Error(`expected HTTP ${expected}, got ${res.status}: ${short(res.data)}`);
     if (extra) {
       const problem = extra(res.data, res);
-      if (problem) throw new Error(problem);
+      if (typeof problem === 'string') throw new Error(problem);
     }
     results.pass++;
     console.log(`  ${green('✔')} ${name}`);
@@ -182,7 +182,7 @@ async function main() {
   const countries = await check(
     'countries are seeded',
     200,
-    () => guest.get('/reference/countries?limit=5'),
+    () => guest.get('/reference/countries'),
     (d) => (items(d).length ? null : 'no countries: run npm run seed'),
   );
   const cities = await check(
@@ -204,8 +204,10 @@ async function main() {
   void countries;
 
   const cityList = items(cities?.data);
-  const city = cityList[0];
-  const city2 = cityList.find((c) => c.countryCode !== city?.countryCode) ?? cityList[1];
+  // Prefer cities from the official CSV (they have a code); older seed data may not.
+  const coded = cityList.filter((c) => c.code);
+  const city = coded[0] ?? cityList[0];
+  const city2 = coded.find((c) => c.countryCode !== city?.countryCode) ?? coded[1] ?? cityList[1];
   const airportList = items(airports?.data);
   const [ap1, ap2] = airportList;
 
@@ -358,8 +360,9 @@ async function main() {
   } else {
     await check('set baggage policy', 200, () =>
       airlineMod.put(`/airlines/${airlineId}/baggage-policy`, {
+        extraBagPrice: 25,
         maxExtraBagsPerPassenger: 2,
-        cabins: [{ cabin: 'Economy', freeBags: 1 }],
+        cabins: [{ cabin: 'Economy', freeBags: 1, maxWeightKg: 23 }],
       }),
     );
     await check('set cancellation policy', 200, () =>
@@ -506,10 +509,10 @@ async function main() {
         hotelMod.post(`/hotels/${hotelId}/rooms/${roomId}/availability`, { startDate: day(1), endDate: day(90) }),
       );
       await check('room status calendar (HTL-08)', 200, () =>
-        hotelMod.get(`/hotels/${hotelId}/rooms/status?checkIn=${checkIn}&checkOut=${checkOut}`),
+        hotelMod.get(`/hotels/${hotelId}/rooms/status?startDate=${checkIn}&endDate=${checkOut}`),
       );
       await check('official path GET /hotels/:id/availability', 200, () =>
-        hotelMod.get(`/hotels/${hotelId}/availability?checkIn=${checkIn}&checkOut=${checkOut}`),
+        hotelMod.get(`/hotels/${hotelId}/availability?startDate=${checkIn}&endDate=${checkOut}`),
       );
     }
     await check('user cannot add rooms', 403, () =>
@@ -827,7 +830,7 @@ async function main() {
   const carol = await newUser('Carol');
   const cPost = await carol.post('/posts', { title: `Carol post ${RUN}`, content: 'Body', status: 'published' });
   const cPostId = idOf(cPost.data);
-  await check('delete my account', [200, 204], () => carol.req('DELETE', '/users/me', { password: PASSWORD }));
+  await check('delete my account', [200, 204], () => carol.req('DELETE', '/users/me', { password: PASSWORD, confirm: true }));
   if (cPostId) await check("deleted user's posts are hidden", 404, () => guest.get(`/posts/${cPostId}`));
   await check('deleted user cannot log in', [401, 403], () =>
     new Client('x').post('/auth/login', { email: carol.email, password: PASSWORD }),
