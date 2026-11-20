@@ -18,7 +18,11 @@ import { NotificationType } from '../notifications/schemas/notification.schema';
 import { NotificationsService } from '../notifications/notifications.service';
 import { User, UserDocument } from '../users/schemas/user.schema';
 import { toUserResponse, UsersService } from '../users/users.service';
-import { AccountStatusDto, CreateModeratorDto, CreateReportDto, ResolveReportDto } from './dto/admin.dto';
+import { AdminBookingsQueryDto, CreateModeratorDto, CreateReportDto, ResolveReportDto } from './dto/admin.dto';
+import { HotelReviewsService } from '../hotel-bookings/hotel-reviews.service';
+import { HotelReview, HotelReviewDocument } from '../hotel-bookings/schemas/hotel-review.schema';
+import { ItinerariesService } from '../itineraries/itineraries.service';
+import { Itinerary, ItineraryDocument } from '../itineraries/schemas/itinerary.schema';
 import { ContentReport, ContentReportDocument, ReportContentType, ReportStatus } from './schemas/content-report.schema';
 
 @Injectable()
@@ -36,6 +40,10 @@ export class AdminService {
     private readonly notifications: NotificationsService,
     private readonly audit: AuditService,
     private readonly blog: BlogService,
+    private readonly hotelReviews: HotelReviewsService,
+    private readonly itineraries: ItinerariesService,
+    @InjectModel(HotelReview.name) private readonly reviewModel: Model<HotelReviewDocument>,
+    @InjectModel(Itinerary.name) private readonly itineraryModel: Model<ItineraryDocument>,
   ) {}
 
   async createModerator(admin: AuthUser, dto: CreateModeratorDto, ip?: string) {
@@ -122,29 +130,57 @@ export class AdminService {
     return toUserResponse(account);
   }
 
+  // ---------- GEN-09 / GEN-10: reports and moderation ----------
+
+  /** One place that knows how to check, hide, unhide and delete each kind of user content. */
+  private moderationTarget(type: ReportContentType) {
+    switch (type) {
+      case ReportContentType.Post:
+      case ReportContentType.Comment: {
+        const t = type === ReportContentType.Post ? 'post' : 'comment';
+        return {
+          reportable: (id: string) => this.blog.isReportable(t, id),
+          setHidden: (id: string, hidden: boolean) => this.blog.setHiddenForModeration(t, id, hidden),
+          remove: (id: string) => this.blog.deleteForModeration(t, id),
+        };
+      }
+      case ReportContentType.Review:
+        return {
+          reportable: (id: string) => this.hotelReviews.isReportable(id),
+          setHidden: (id: string, hidden: boolean) => this.hotelReviews.setHiddenForModeration(id, hidden),
+          remove: (id: string) => this.hotelReviews.removeForModeration(id),
+        };
+      case ReportContentType.Itinerary:
+        return {
+          reportable: (id: string) => this.itineraries.isReportable(id),
+          setHidden: (id: string, hidden: boolean) => this.itineraries.setHiddenForModeration(id, hidden),
+          remove: (id: string) => this.itineraries.removeForModeration(id),
+        };
+      default:
+        throw new BadRequestException('Unknown content type');
+    }
+  }
+
+  /** GEN-09: report a post, comment, hotel review or public itinerary, at most once per item. */
   async createReport(reporterId: string, dto: CreateReportDto) {
     if (!Types.ObjectId.isValid(dto.contentId)) throw new BadRequestException('Invalid content ID');
-    const contentId = new Types.ObjectId(dto.contentId);
-    const contentModel = (dto.contentType === ReportContentType.Post ? this.posts : this.comments) as Model<any>;
-    const content = (await contentModel.findById(contentId).select('_id hidden').lean().exec()) as {
-      hidden?: boolean;
-    } | null;
-    if (!content || content.hidden) throw new NotFoundException('Content not found');
-
-    const existing = await this.reports.exists({
+    if (!(await this.moderationTarget(dto.contentType).reportable(dto.contentId))) {
+      throw new NotFoundException('Content not found');
+    }
+    const key = {
       reporterId: new Types.ObjectId(reporterId),
       contentType: dto.contentType,
-      contentId,
-      status: ReportStatus.Pending,
-    });
-    if (existing) throw new ConflictException('You already have a pending report for this content');
-    return this.reports.create({
-      reporterId: new Types.ObjectId(reporterId),
-      contentType: dto.contentType,
-      contentId,
-      reason: dto.reason,
-      status: ReportStatus.Pending,
-    });
+      contentId: new Types.ObjectId(dto.contentId),
+    };
+    const duplicate = () =>
+      new ConflictException({ message: 'You have already reported this content', code: 'ALREADY_REPORTED' });
+    if (await this.reports.exists(key)) throw duplicate();
+    try {
+      return await this.reports.create({ ...key, reason: dto.reason, status: ReportStatus.Pending });
+    } catch (error) {
+      if ((error as { code?: number })?.code === 11000) throw duplicate();
+      throw error;
+    }
   }
 
   async listReports(query: { page?: number; limit?: number; status?: ReportStatus }) {
@@ -157,35 +193,36 @@ export class AdminService {
         { path: 'reviewedBy', select: 'name email' },
       ],
     });
-    const postIds = result.items
-      .filter((report) => report.contentType === ReportContentType.Post)
-      .map((report) => report.contentId);
-    const commentIds = result.items
-      .filter((report) => report.contentType === ReportContentType.Comment)
-      .map((report) => report.contentId);
-    const [posts, comments] = await Promise.all([
+    const idsOf = (type: ReportContentType) =>
+      result.items.filter((report) => report.contentType === type).map((report) => report.contentId);
+    const [posts, comments, reviews, itineraries] = await Promise.all([
       this.posts
-        .find({ _id: { $in: postIds } })
+        .find({ _id: { $in: idsOf(ReportContentType.Post) } })
         .select('title content status author hidden')
         .lean()
         .exec(),
       this.comments
-        .find({ _id: { $in: commentIds } })
+        .find({ _id: { $in: idsOf(ReportContentType.Comment) } })
         .select('content post author hidden')
         .lean()
         .exec(),
+      this.reviewModel
+        .find({ _id: { $in: idsOf(ReportContentType.Review) } })
+        .select('rating review hotelId userId hidden')
+        .lean()
+        .exec(),
+      this.itineraryModel
+        .find({ _id: { $in: idsOf(ReportContentType.Itinerary) } })
+        .select('title ownerId visibility hidden')
+        .lean()
+        .exec(),
     ]);
-    const postById = new Map(posts.map((post) => [String(post._id), post]));
-    const commentById = new Map(comments.map((comment) => [String(comment._id), comment]));
+    const byId = new Map<string, unknown>(
+      [...posts, ...comments, ...reviews, ...itineraries].map((doc: any) => [String(doc._id), doc]),
+    );
     return {
       ...result,
-      items: result.items.map((report) => ({
-        ...report,
-        content:
-          report.contentType === ReportContentType.Post
-            ? (postById.get(String(report.contentId)) ?? null)
-            : (commentById.get(String(report.contentId)) ?? null),
-      })),
+      items: result.items.map((report) => ({ ...report, content: byId.get(String(report.contentId)) ?? null })),
     };
   }
 
@@ -194,25 +231,30 @@ export class AdminService {
     if (!report) throw new NotFoundException('Report not found');
     if (report.status !== ReportStatus.Pending) throw new ConflictException('This report has already been reviewed');
 
-    const contentModel = (report.contentType === ReportContentType.Post ? this.posts : this.comments) as Model<any>;
-    const content = await contentModel.findById(report.contentId).select('_id hidden').lean().exec();
-    if (dto.action !== 'dismiss' && !content) {
-      throw new NotFoundException('Reported content no longer exists');
-    }
-
-    if (dto.action === 'hide' && content) {
-      if (report.contentType === ReportContentType.Post) {
-        await this.posts.updateOne({ _id: report.contentId }, { $set: { hidden: true } }).exec();
-      } else {
-        await this.comments.updateOne({ _id: report.contentId }, { $set: { hidden: true } }).exec();
-      }
-    }
-    if (dto.action === 'delete' && content) {
-      if (report.contentType === ReportContentType.Post) {
-        await this.blog.deleteContentForModeration(String(report.contentId));
-      } else {
-        await this.comments.deleteOne({ _id: report.contentId }).exec();
-      }
+    if (dto.action !== 'dismiss') {
+      const target = this.moderationTarget(report.contentType);
+      const id = String(report.contentId);
+      const done = dto.action === 'hide' ? await target.setHidden(id, true) : await target.remove(id);
+      if (!done) throw new NotFoundException('Reported content no longer exists');
+      // Other pending reports about the same item are settled by the same decision.
+      await this.reports
+        .updateMany(
+          {
+            _id: { $ne: report._id },
+            contentType: report.contentType,
+            contentId: report.contentId,
+            status: ReportStatus.Pending,
+          },
+          {
+            $set: {
+              status: ReportStatus.Resolved,
+              reviewedBy: new Types.ObjectId(admin.id),
+              reviewedAt: new Date(),
+              resolutionNote: dto.note,
+            },
+          },
+        )
+        .exec();
     }
 
     report.status = dto.action === 'dismiss' ? ReportStatus.Dismissed : ReportStatus.Resolved;
@@ -238,26 +280,87 @@ export class AdminService {
     return report;
   }
 
-  async listBookings(query: {
-    page?: number;
-    limit?: number;
-    type?: 'flight' | 'hotel';
-  }): Promise<PaginatedResult<any>> {
+  /** GEN-10: hide or unhide any user content directly, without a report. */
+  async setContentHidden(
+    admin: AuthUser,
+    type: ReportContentType,
+    id: string,
+    hidden: boolean,
+    reason?: string,
+    ip?: string,
+  ) {
+    if (!(await this.moderationTarget(type).setHidden(id, hidden))) throw new NotFoundException('Content not found');
+    await this.audit.log(admin, {
+      action: hidden ? AuditAction.ContentHidden : AuditAction.ContentUnhidden,
+      targetType: type,
+      targetId: id,
+      reason,
+      ip,
+    });
+    return { type, id, hidden };
+  }
+
+  /** GEN-10: delete any user content directly. */
+  async deleteContent(admin: AuthUser, type: ReportContentType, id: string, reason?: string, ip?: string) {
+    if (!(await this.moderationTarget(type).remove(id))) throw new NotFoundException('Content not found');
+    await this.reports
+      .updateMany(
+        { contentType: type, contentId: new Types.ObjectId(id), status: ReportStatus.Pending },
+        { $set: { status: ReportStatus.Resolved, reviewedBy: new Types.ObjectId(admin.id), reviewedAt: new Date() } },
+      )
+      .exec();
+    await this.audit.log(admin, { action: AuditAction.ContentDeleted, targetType: type, targetId: id, reason, ip });
+    return { type, id, deleted: true };
+  }
+
+  // ---------- ACC-17 ----------
+
+  async listBookings(query: AdminBookingsQueryDto): Promise<PaginatedResult<any>> {
     const page = Math.max(1, Number(query.page) || 1);
     const limit = Math.min(100, Math.max(1, Number(query.limit) || 10));
     const offset = (page - 1) * limit;
+
+    const filter: Record<string, any> = {};
+    if (query.status) filter.status = query.status;
+    if (query.from || query.to) {
+      filter.createdAt = {};
+      if (query.from) filter.createdAt.$gte = new Date(query.from);
+      if (query.to) {
+        const to = new Date(query.to);
+        // A plain date means "through the end of that day".
+        if (/^\d{4}-\d{2}-\d{2}$/.test(query.to)) to.setUTCHours(23, 59, 59, 999);
+        filter.createdAt.$lte = to;
+      }
+      if (query.from && query.to && filter.createdAt.$gte > filter.createdAt.$lte) {
+        throw new BadRequestException('"from" must be on or before "to"');
+      }
+    }
+
+    const flightQuery = (take: number, skip = 0) =>
+      this.flightBookings
+        .find(filter)
+        .select('reference userId status legs departureAt lastArrivalAt totalMinor currency createdAt')
+        .populate('userId', 'name email')
+        .sort({ createdAt: -1, _id: -1 })
+        .skip(skip)
+        .limit(take)
+        .lean()
+        .exec();
+    const hotelQuery = (take: number, skip = 0) =>
+      this.hotelBookings
+        .find(filter)
+        .select('reference userId hotelId hotelName status checkIn checkOut rooms totalMinor currency createdAt')
+        .populate('userId', 'name email')
+        .sort({ createdAt: -1, _id: -1 })
+        .skip(skip)
+        .limit(take)
+        .lean()
+        .exec();
+
     if (query.type === 'flight') {
       const [items, total] = await Promise.all([
-        this.flightBookings
-          .find()
-          .select('reference userId status legs departureAt lastArrivalAt totalMinor currency createdAt')
-          .populate('userId', 'name email')
-          .sort({ createdAt: -1, _id: -1 })
-          .skip(offset)
-          .limit(limit)
-          .lean()
-          .exec(),
-        this.flightBookings.countDocuments(),
+        flightQuery(limit, offset),
+        this.flightBookings.countDocuments(filter),
       ]);
       return toPage(
         items.map((item) => ({ ...item, bookingType: 'flight' })),
@@ -267,18 +370,7 @@ export class AdminService {
       );
     }
     if (query.type === 'hotel') {
-      const [items, total] = await Promise.all([
-        this.hotelBookings
-          .find()
-          .select('reference userId hotelId hotelName status checkIn checkOut rooms totalMinor currency createdAt')
-          .populate('userId', 'name email')
-          .sort({ createdAt: -1, _id: -1 })
-          .skip(offset)
-          .limit(limit)
-          .lean()
-          .exec(),
-        this.hotelBookings.countDocuments(),
-      ]);
+      const [items, total] = await Promise.all([hotelQuery(limit, offset), this.hotelBookings.countDocuments(filter)]);
       return toPage(
         items.map((item) => ({ ...item, bookingType: 'hotel' })),
         total,
@@ -288,24 +380,10 @@ export class AdminService {
     }
 
     const [flights, hotels, flightTotal, hotelTotal] = await Promise.all([
-      this.flightBookings
-        .find()
-        .select('reference userId status legs departureAt lastArrivalAt totalMinor currency createdAt')
-        .populate('userId', 'name email')
-        .sort({ createdAt: -1, _id: -1 })
-        .limit(offset + limit)
-        .lean()
-        .exec(),
-      this.hotelBookings
-        .find()
-        .select('reference userId hotelId hotelName status checkIn checkOut rooms totalMinor currency createdAt')
-        .populate('userId', 'name email')
-        .sort({ createdAt: -1, _id: -1 })
-        .limit(offset + limit)
-        .lean()
-        .exec(),
-      this.flightBookings.countDocuments(),
-      this.hotelBookings.countDocuments(),
+      flightQuery(offset + limit),
+      hotelQuery(offset + limit),
+      this.flightBookings.countDocuments(filter),
+      this.hotelBookings.countDocuments(filter),
     ]);
     const items = [
       ...flights.map((booking) => ({ ...booking, bookingType: 'flight' as const })),

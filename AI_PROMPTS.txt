@@ -369,3 +369,24 @@ How the output was used:
 Integrated a moderation report schema and admin endpoints with the existing NestJS auth, users,
 audit, notifications, bookings, and blog modules. Added hidden-content filtering to public blog
 reads and documented the endpoints and setup. Build and tests are to be recorded after validation.
+
+Date: 2026-11-20
+Student: Kenzie (team leader)
+Tool: Claude
+Related Requirements: BLG-01 to BLG-12, GEN-05, GEN-09, GEN-10, ACC-12, ACC-15, ACC-17, ITN-01, ITN-05, ITN-21, HTL-02, HTL-08, HTL-16, HTL-22, HTL-23
+Prompt:
+The backend should now be complete. Check that ALL the requirements are completed, that
+everything works, and give me a script to test the backend APIs.
+How the output was used:
+Audited every module against the requirement sheet and fixed the gaps found. Blog: one text index
+instead of three (MongoDB allows one), search by title, tags or author ordered by likes + comments,
+max 5 tags of 30 characters, 500-character comments in chronological order, idempotent likes with
+DELETE /posts/:id/like, counts and pagination on "my posts", author page with join date and public
+itineraries, PATCH/DELETE /comments/:id, deactivated authors hidden. Admin: reports for posts,
+comments, hotel reviews and public itineraries (once per item), direct hide/unhide/delete of any
+content, booking filters by status and date range, hotel deactivation wired into ACC-15. Hotels:
+official path aliases, available rooms on the details page when dates are given, hidden reviews
+excluded from the rating. Itineraries: 100-character titles, 60-day limit, keyword search over
+title/countries/cities, hidden flag. Merged the duplicate "test" script so all 168 unit tests run.
+Added scripts/api-smoke-test.mjs (npm run test:api). Verified with tsc, lint, unit tests and a
+dependency-injection boot check; reviewed every change.

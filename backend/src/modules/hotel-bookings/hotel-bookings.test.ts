@@ -244,11 +244,11 @@ test('HTL-17/18: schemas include correct ObjectId references and indexes', () =>
 test('HTL-16/17: routes are protected and expose quote, hold, confirmation page', () => {
   for (const [name, path, method] of [
     ['summary', 'summary', RequestMethod.POST],
-    ['hold', 'hold', RequestMethod.POST],
+    ['hold', ['hold', '/'], RequestMethod.POST],
     ['getOne', ':id', RequestMethod.GET],
   ] as const) {
     const handler = HotelBookingsController.prototype[name];
-    assert.equal(Reflect.getMetadata(PATH_METADATA, handler), path);
+    assert.deepEqual(Reflect.getMetadata(PATH_METADATA, handler), path);
     assert.equal(Reflect.getMetadata(METHOD_METADATA, handler), method);
   }
   assert.deepEqual(Reflect.getMetadata(ROLES_KEY, HotelBookingsController.prototype.summary), [Role.User]);
@@ -288,10 +288,19 @@ test('HTL-20: booking history is owner-scoped, grouped and paginated', async () 
   let skipped = 0;
 
   const chain: any = {
-    sort() { return this; },
-    skip(n: number) { skipped = n; return this; },
-    limit() { return this; },
-    lean() { return this; },
+    sort() {
+      return this;
+    },
+    skip(n: number) {
+      skipped = n;
+      return this;
+    },
+    limit() {
+      return this;
+    },
+    lean() {
+      return this;
+    },
     exec: async () => [booking],
   };
 
@@ -323,10 +332,7 @@ test('HTL-20: booking history is owner-scoped, grouped and paginated', async () 
   });
 
   assert.equal(String(filter.userId), userId);
-  assert.deepEqual(filter.$and[1].status.$in, [
-    BookingStatus.PendingPayment,
-    BookingStatus.Confirmed,
-  ]);
+  assert.deepEqual(filter.$and[1].status.$in, [BookingStatus.PendingPayment, BookingStatus.Confirmed]);
   assert.equal(skipped, 3);
   assert.equal(upcoming.total, 1);
   assert.equal(upcoming.page, 2);
@@ -334,35 +340,16 @@ test('HTL-20: booking history is owner-scoped, grouped and paginated', async () 
   assert.equal(upcoming.items[0].rooms[0].roomId, roomId);
 
   await service.list(user, { scope: 'past' });
-  assert.ok(
-    filter.$and[0].$or.some(
-      (condition: any) =>
-        condition.status === BookingStatus.Completed,
-    ),
-  );
+  assert.ok(filter.$and[0].$or.some((condition: any) => condition.status === BookingStatus.Completed));
 
   await service.list(user, { scope: 'cancelled' });
   assert.equal(filter.status, BookingStatus.Cancelled);
   assert.equal(String(filter.userId), userId);
 
-  await assert.rejects(
-    service.list({ ...user, role: Role.HotelModerator }, {}),
-  );
+  await assert.rejects(service.list({ ...user, role: Role.HotelModerator }, {}));
 
-  assert.equal(
-    Reflect.getMetadata(
-      METHOD_METADATA,
-      HotelBookingsController.prototype.list,
-    ),
-    RequestMethod.GET,
-  );
-  assert.deepEqual(
-    Reflect.getMetadata(
-      ROLES_KEY,
-      HotelBookingsController.prototype.list,
-    ),
-    [Role.User],
-  );
+  assert.equal(Reflect.getMetadata(METHOD_METADATA, HotelBookingsController.prototype.list), RequestMethod.GET);
+  assert.deepEqual(Reflect.getMetadata(ROLES_KEY, HotelBookingsController.prototype.list), [Role.User]);
 });
 
 test('HTL-21: cancellation preview checks owner, status, date and refund', async () => {
@@ -375,9 +362,7 @@ test('HTL-21: cancellation preview checks owner, status, date and refund', async
     reference: 'HTL-TEST1234',
     hotelName: 'Example Hotel',
     status: BookingStatus.Confirmed,
-    checkIn: new Date(Date.now() + 30 * 86400000)
-      .toISOString()
-      .slice(0, 10),
+    checkIn: new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10),
     checkOut: '2027-12-31',
     totalMinor: 60000,
     currency: 'USD',
@@ -401,36 +386,24 @@ test('HTL-21: cancellation preview checks owner, status, date and refund', async
 
   // A different traveller cannot view another user's refund.
   await assert.rejects(
-    service.cancellationPreview(
-      { ...user, id: String(new Types.ObjectId()) },
-      bookingId,
-    ),
+    service.cancellationPreview({ ...user, id: String(new Types.ObjectId()) }, bookingId),
     (error: any) => error.getStatus() === 404,
   );
 
   // Only confirmed bookings can be cancelled.
   booking.status = BookingStatus.PendingPayment;
 
-  await assert.rejects(
-    service.cancellationPreview(user, bookingId),
-    (error: any) => error.getStatus() === 409,
-  );
+  await assert.rejects(service.cancellationPreview(user, bookingId), (error: any) => error.getStatus() === 409);
 
   // Cancellation is forbidden on the check-in date.
   booking.status = BookingStatus.Confirmed;
   booking.checkIn = new Date().toISOString().slice(0, 10);
 
-  await assert.rejects(
-    service.cancellationPreview(user, bookingId),
-    (error: any) => error.getStatus() === 409,
-  );
+  await assert.rejects(service.cancellationPreview(user, bookingId), (error: any) => error.getStatus() === 409);
 
   // Hotel moderators cannot use the traveller endpoint.
   await assert.rejects(
-    service.cancellationPreview(
-      { ...user, role: Role.HotelModerator },
-      bookingId,
-    ),
+    service.cancellationPreview({ ...user, role: Role.HotelModerator }, bookingId),
     (error: any) => error.getStatus() === 403,
   );
 });

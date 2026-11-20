@@ -12,19 +12,27 @@ import { HotelReviewsController, PublicHotelReviewsController } from './hotel-re
 import { HotelRoomManagementController } from './hotel-room-management.controller';
 import { HotelReviewSchema } from './schemas/hotel-review.schema';
 
-function checkRoute(handler: (...args: any[]) => any, path: string, method: RequestMethod, role?: Role) {
+function checkRoute(handler: (...args: any[]) => any, path: string | string[], method: RequestMethod, role?: Role) {
   const actualPath = Reflect.getMetadata(PATH_METADATA, handler);
   if (path === '') assert.ok(actualPath === '' || actualPath === '/');
-  else assert.equal(actualPath, path);
+  else assert.deepEqual(actualPath, path);
   assert.equal(Reflect.getMetadata(METHOD_METADATA, handler), method);
   if (role) assert.deepEqual(Reflect.getMetadata(ROLES_KEY, handler), [role]);
 }
 
 test('HTL-06/08/23/24: route paths and role boundaries are explicit', () => {
-  checkRoute(HotelRoomManagementController.prototype.status, ':hotelId/rooms/status', RequestMethod.GET,
-    Role.HotelModerator);
-  checkRoute(HotelRoomManagementController.prototype.delete, ':hotelId/rooms/:roomId', RequestMethod.DELETE,
-    Role.HotelModerator);
+  checkRoute(
+    HotelRoomManagementController.prototype.status,
+    [':hotelId/rooms/status', ':hotelId/availability'],
+    RequestMethod.GET,
+    Role.HotelModerator,
+  );
+  checkRoute(
+    HotelRoomManagementController.prototype.delete,
+    ':hotelId/rooms/:roomId',
+    RequestMethod.DELETE,
+    Role.HotelModerator,
+  );
   checkRoute(HotelReviewsController.prototype.create, '', RequestMethod.POST, Role.User);
   checkRoute(HotelReviewsController.prototype.update, ':id', RequestMethod.PATCH, Role.User);
   checkRoute(HotelReviewsController.prototype.delete, ':id', RequestMethod.DELETE, Role.User);
@@ -50,7 +58,8 @@ test('HTL-23/08: DTO validation rejects bad review data and incomplete date rang
     { bookingId: '507f1f77bcf86cd799439012', rating: 6 },
     { bookingId: '507f1f77bcf86cd799439012', rating: 2.5 },
     { bookingId: '507f1f77bcf86cd799439012', rating: 4, review: 'x'.repeat(1001) },
-  ]) await assert.rejects(pipe.transform(bad, body));
+  ])
+    await assert.rejects(pipe.transform(bad, body));
   const query: any = { type: 'query', metatype: HotelRoomStatusQueryDto };
   await assert.rejects(pipe.transform({ startDate: '2027-01-01' }, query));
   await assert.rejects(pipe.transform({ startDate: 'wrong', endDate: '2027-02-01' }, query));

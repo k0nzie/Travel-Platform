@@ -24,3 +24,22 @@ export class HotelStaffBookingsController {
     return this.bookings.listForHotel(user, hotelId, query);
   }
 }
+
+/** Official path for HTL-22 (section 8.5): GET /api/hotels/:id/reservations. */
+@ApiTags('Hotel bookings')
+@ApiCookieAuth('access_token')
+@Controller('hotels')
+export class HotelReservationsController {
+  constructor(private readonly bookings: HotelStaffBookingsService) {}
+
+  @Get(':hotelId/reservations')
+  @Roles(Role.HotelModerator)
+  @ApiOperation({ summary: 'HTL-22: List bookings for my assigned hotel (same as GET /hotel-bookings/hotel/:hotelId)' })
+  list(
+    @CurrentUser() user: AuthUser,
+    @Param('hotelId', ParseObjectIdPipe) hotelId: string,
+    @Query() query: HotelStaffBookingsQueryDto,
+  ) {
+    return this.bookings.listForHotel(user, hotelId, query);
+  }
+}

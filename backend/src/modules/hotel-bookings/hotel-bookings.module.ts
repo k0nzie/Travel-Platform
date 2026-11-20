@@ -12,7 +12,7 @@ import { HotelReviewsController, PublicHotelReviewsController } from './hotel-re
 import { HotelReviewsService } from './hotel-reviews.service';
 import { HotelRoomManagementController } from './hotel-room-management.controller';
 import { HotelRoomManagementService } from './hotel-room-management.service';
-import { HotelStaffBookingsController } from './hotel-staff-bookings.controller';
+import { HotelReservationsController, HotelStaffBookingsController } from './hotel-staff-bookings.controller';
 import { HotelStaffBookingsService } from './hotel-staff-bookings.service';
 import { HotelBooking, HotelBookingSchema } from './schemas/hotel-booking.schema';
 import { HotelReview, HotelReviewSchema } from './schemas/hotel-review.schema';
@@ -33,16 +33,12 @@ import { HotelReview, HotelReviewSchema } from './schemas/hotel-review.schema';
   controllers: [
     HotelBookingsController,
     HotelStaffBookingsController,
+    HotelReservationsController,
     HotelReviewsController,
     PublicHotelReviewsController,
     HotelRoomManagementController,
   ],
-  providers: [
-    HotelBookingsService,
-    HotelStaffBookingsService,
-    HotelReviewsService,
-    HotelRoomManagementService,
-  ],
-  exports: [HotelBookingsService],
+  providers: [HotelBookingsService, HotelStaffBookingsService, HotelReviewsService, HotelRoomManagementService],
+  exports: [HotelBookingsService, HotelReviewsService],
 })
 export class HotelBookingsModule {}

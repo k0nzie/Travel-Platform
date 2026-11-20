@@ -287,7 +287,10 @@ export class ItineraryItemsService {
   async budgetSummary(user: AuthUser | undefined, itineraryId: string, currency?: string) {
     const it = Types.ObjectId.isValid(itineraryId) ? await this.itineraries.findById(itineraryId).lean().exec() : null;
     if (!it) throw new NotFoundException('Itinerary not found');
-    if (it.visibility !== ItineraryVisibility.Public) assertOwner(it.ownerId, user, { resource: 'Itinerary' });
+    // GEN-10: hidden itineraries are visible only to their owner (and admins).
+    if (it.visibility !== ItineraryVisibility.Public || it.hidden) {
+      assertOwner(it.ownerId, user, { allowAdmin: true, resource: 'Itinerary' });
+    }
 
     let display = currency ?? it.budgetCurrency;
     if (!display && user) {

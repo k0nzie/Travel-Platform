@@ -29,11 +29,11 @@ export const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 // ---------- itinerary (ITN-01, ITN-20) ----------
 
 export class CreateItineraryDto {
-  @ApiProperty({ example: 'Two weeks in Egypt', maxLength: 120 })
+  @ApiProperty({ example: 'Two weeks in Egypt', maxLength: 100 })
   @Transform(trim)
   @IsString()
   @IsNotEmpty()
-  @MaxLength(120)
+  @MaxLength(100) // ITN-01
   title: string;
 
   @ApiPropertyOptional({ maxLength: 2000 })
@@ -95,7 +95,7 @@ export enum PublicItinerarySort {
 
 /** ITN-20 / ITN-21: public search. */
 export class PublicItinerarySearchDto extends PaginationQueryDto {
-  @ApiPropertyOptional({ description: 'Text in title or description' })
+  @ApiPropertyOptional({ description: 'ITN-21: keyword matched against the title, countries and cities' })
   @IsOptional()
   @Transform(trim)
   @IsString()
@@ -120,7 +120,7 @@ export class PublicItinerarySearchDto extends PaginationQueryDto {
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  @Max(365)
+  @Max(60) // ITN-05
   minDays?: number;
 
   @ApiPropertyOptional({ minimum: 1, maximum: 365, description: 'Maximum number of days' })
@@ -128,7 +128,7 @@ export class PublicItinerarySearchDto extends PaginationQueryDto {
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  @Max(365)
+  @Max(60) // ITN-05
   maxDays?: number;
 
   @ApiPropertyOptional({ enum: PublicItinerarySort, default: PublicItinerarySort.Newest })
@@ -143,7 +143,7 @@ export class CloneItineraryDto {
   @Transform(trim)
   @IsString()
   @IsNotEmpty()
-  @MaxLength(120)
+  @MaxLength(100)
   title?: string;
 
   @ApiPropertyOptional({ example: '2027-05-01', description: 'New start date (defaults to the original)' })

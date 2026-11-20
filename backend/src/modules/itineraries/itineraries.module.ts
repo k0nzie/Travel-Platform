@@ -31,6 +31,6 @@ import { TransportCost, TransportCostSchema } from './schemas/transport-cost.sch
   ],
   controllers: [ItinerariesController, ActivitiesController, BudgetsController],
   providers: [ItinerariesService, ItineraryItemsService, ItineraryHooksService],
-  exports: [ItineraryHooksService],
+  exports: [ItineraryHooksService, ItinerariesService],
 })
 export class ItinerariesModule {}

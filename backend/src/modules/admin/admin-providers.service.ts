@@ -4,6 +4,8 @@ import { AuthUser } from '../../common/interfaces/auth-user.interface';
 import { AuditService } from '../audit/audit.service';
 import { AuditAction } from '../audit/schemas/audit-log.schema';
 import { FlightsService } from '../flights/flights.service';
+import { HotelsService } from '../hotels/hotels.service';
+import { HotelStatus } from '../hotels/schemas/hotel.schema';
 import { AirlineStatus } from '../flights/schemas/airline.schema';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/schemas/notification.schema';
@@ -26,6 +28,7 @@ export class AdminProvidersService {
 
   constructor(
     flights: FlightsService,
+    hotels: HotelsService,
     private readonly users: UsersService,
     private readonly notifications: NotificationsService,
     private readonly audit: AuditService,
@@ -34,8 +37,9 @@ export class AdminProvidersService {
       [ProviderType.Airline]: {
         setActive: (id, active) => flights.setAirlineStatus(id, active ? AirlineStatus.Active : AirlineStatus.Inactive),
       },
-      // Person 4: add [ProviderType.Hotel] here with HotelsService once HotelsModule exists
-      // (and import HotelsModule in AdminModule). Search must hide inactive hotels; booking must refuse them.
+      [ProviderType.Hotel]: {
+        setActive: (id, active) => hotels.setHotelStatus(id, active ? HotelStatus.Active : HotelStatus.Inactive),
+      },
     };
   }
 

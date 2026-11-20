@@ -13,9 +13,12 @@ import { HotelRoomManagementService } from './hotel-room-management.service';
 export class HotelRoomManagementController {
   constructor(private readonly rooms: HotelRoomManagementService) {}
 
-  @Get(':hotelId/rooms/status')
+  @Get([':hotelId/rooms/status', ':hotelId/availability'])
   @Roles(Role.HotelModerator)
-  @ApiOperation({ summary: 'HTL-08: Available / Booked (reference) / Blocked for each room on chosen dates' })
+  @ApiOperation({
+    summary:
+      'HTL-08: Available / Booked (reference) / Blocked for each room on chosen dates (also GET /hotels/:id/availability)',
+  })
   status(
     @CurrentUser() user: AuthUser,
     @Param('hotelId', ParseObjectIdPipe) hotelId: string,

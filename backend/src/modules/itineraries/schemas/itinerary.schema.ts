@@ -61,7 +61,7 @@ export class Itinerary {
   @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'User', required: true, index: true })
   ownerId: Types.ObjectId;
 
-  @Prop({ required: true, trim: true, maxlength: 120 })
+  @Prop({ required: true, trim: true, maxlength: 100 })
   title: string;
 
   @Prop({ trim: true, maxlength: 2000 })
@@ -91,6 +91,10 @@ export class Itinerary {
   /** Set when the owner makes it public; used to sort public search results. */
   @Prop()
   publishedAt?: Date;
+
+  /** GEN-10: hidden by an administrator; visible only to its owner and admins. */
+  @Prop({ default: false, index: true })
+  hidden: boolean;
 
   createdAt?: Date;
   updatedAt?: Date;
