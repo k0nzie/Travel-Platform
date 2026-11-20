@@ -34,10 +34,18 @@ export function flightDetails(flight: Flight & { _id: unknown; airline?: unknown
     // FLT-08/09: policies are airline-level; flights expose their airline's current policy.
     baggagePolicy: (flight as any).airline?.baggagePolicy ?? null,
     cancellationTiers: (flight as any).airline?.cancellationTiers ?? [],
-    cabins: flight.cabins.map((c) => ({
-      ...c,
-      available: status === FlightStatus.Scheduled ? Math.max(0, c.capacity - c.held - c.booked) : 0,
-    })),
+    cabins: flight.cabins.map((c) => {
+      const airlineAllowance = (flight as any).airline?.baggagePolicy?.cabins?.find((a: any) => a.cabin === c.cabin);
+      return {
+        ...c,
+        available: status === FlightStatus.Scheduled ? Math.max(0, c.capacity - c.held - c.booked) : 0,
+        // FLT-04 / FLT-17: the flight's own allowance, else the airline's for this cabin.
+        baggageAllowance: {
+          freeBags: c.freeBags ?? airlineAllowance?.freeBags ?? 0,
+          maxWeightKg: c.maxWeightKg ?? airlineAllowance?.maxWeightKg ?? null,
+        },
+      };
+    }),
   };
 }
 export type FlightDetails = ReturnType<typeof flightDetails>;

@@ -42,11 +42,38 @@ export class CabinDto {
   @ApiProperty({ enum: CabinType }) @IsEnum(CabinType) cabin: CabinType;
   @ApiProperty({ minimum: 1, description: 'Whole seats > 0' }) @IsInt() @Min(1) @Max(1000) capacity: number;
   @ApiProperty({ description: 'Per seated passenger, > 0, platform currency' }) @IsNumber() @IsPositive() price: number;
+  @ApiPropertyOptional({
+    minimum: 0,
+    description: "FLT-04: free bags per passenger (defaults to the airline's allowance)",
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(10)
+  freeBags?: number;
+  @ApiPropertyOptional({ description: "FLT-04: max kg per bag, > 0 (defaults to the airline's allowance)" })
+  @IsOptional()
+  @IsNumber()
+  @IsPositive()
+  @Max(100)
+  maxWeightKg?: number;
 }
 /** PATCH /flights/:id/cabins/:cabinId: class is fixed once added. */
 export class UpdateCabinDto {
   @ApiPropertyOptional({ minimum: 1 }) @IsOptional() @IsInt() @Min(1) @Max(1000) capacity?: number;
   @ApiPropertyOptional({ description: '> 0' }) @IsOptional() @IsNumber() @IsPositive() price?: number;
+  @ApiPropertyOptional({ minimum: 0, description: 'FLT-04: free bags per passenger' })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(10)
+  freeBags?: number;
+  @ApiPropertyOptional({ description: 'FLT-04: max kg per bag, > 0' })
+  @IsOptional()
+  @IsNumber()
+  @IsPositive()
+  @Max(100)
+  maxWeightKg?: number;
 }
 export class CabinAllowanceDto {
   @ApiProperty({ enum: CabinType }) @IsEnum(CabinType) cabin: CabinType;

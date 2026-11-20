@@ -67,3 +67,326 @@ PaymentHooksService so all three cross-module hooks follow one pattern; moved th
 cancellation-tier rules to common/; gave payment responses explicit types (fixed a TypeScript
 out-of-memory); extended docs/CONVENTIONS.md and wrote docs/P4_HOTELS_GUIDE.md.
 ================================================
+================================================
+Date: 2026-11-06
+Student: Mostafa Eltatawi
+Tool: ChatGPT
+Related Requirement: HTL-01, HTL-02, ACC-11, GEN-08
+
+Prompt:
+How can I build the hotel management module in NestJS
+according to our project requirements? How should I
+structure the hotel schema, APIs, validation, moderator
+permissions, and image management using the existing
+backend services?
+
+How the output was used:
+Used AI explanations and code suggestions to implement
+the Hotel schema, DTOs, service, controller, and module.
+Added hotel creation, profile editing, public hotel details,
+and image upload and deletion functionality. Reused the
+shared authentication, reference-data, audit, and media
+services. Added eight unit tests and connected HotelsModule
+to the existing backend.
+
+Date: 2026-11-06
+Student: Mostafa Eltatawi
+Tool: ChatGPT
+Related Requirement: HTL-01, HTL-02, ACC-11, GEN-08
+
+Prompt:
+How can I test my hotel management APIs and make sure
+they work correctly with MongoDB Atlas and Swagger?
+What should I check for authorization, validation,
+image restrictions, and code quality?
+
+How the output was used:
+Followed AI testing guidance to create and update a hotel
+through Swagger and verify the data in MongoDB Atlas.
+Tested administrator and hotel moderator permissions,
+image uploads and deletion, invalid file types, the
+five-image limit, and the 5 MB file-size restriction.
+Fixed formatting issues and verified the TypeScript
+checks, backend build, lint, and all 65 automated tests.
+Reviewed the Git changes before preparing the commit.
+Date: 2026-11-06
+Student: Mostafa Eltatawi
+Tool: ChatGPT
+Related Requirement: HTL-01, HTL-02, HTL-03, ACC-11, GEN-08
+
+Prompt: Help implement HTL-03 room management using the existing NestJS hotel module, including room validation, moderator authorization, unique room identifiers, and tests.
+
+How the output was used: Implemented and reviewed the room schema, DTO, service, controller, and automated tests. Verified with TypeScript, lint, build, 73 passing tests, Swagger, and MongoDB Atlas.
+Date: 2026-11-06
+Student: Mostafa Eltatawi
+Tool: ChatGPT
+Related Requirement: HTL-01, HTL-02, HTL-03, HTL-04 ACC-11, GEN-08
+Prompt: Explain how to implement HTL-04 room availability ranges in the existing NestJS hotel module, with date validation, overlapping-range prevention, moderator authorization, and tests.
+
+How the output was used: Implemented and reviewed the schema, DTO, service, endpoint, and tests. Verified with 82 passing automated tests, Swagger, MongoDB Atlas, and a separate concurrent-update test.
+Date: 08/11/2026
+
+Student Mostafa Eltatawi
+
+AI Tool Used: ChatGPT (OpenAI)
+
+Project:Travel Planning & Booking Platform — Backend (NestJS, MongoDB, Swagger)
+
+Related Requirements: HTL-05 (Edit Room Details and Availability), building on HTL-03 (Room Management) and HTL-04 (Room Availability).
+
+Prompt / Question:
+
+How can a hotel moderator safely edit a room's bed count, maximum occupancy, nightly price, and available dates without accidentally changing other room information? Why is MongoDB's `$set` operator preferable for partial updates?
+
+When editing availability periods, how can I detect overlapping dates while allowing consecutive periods to share a checkout boundary? I'm also curious about what happens if two moderators update the same room's availability simultaneously. How can optimistic concurrency control prevent one update from overwriting the other?
+
+What validation, authorization, and testing approaches would best verify these behaviors in our NestJS and MongoDB backend?
+
+How the AI Output Was Used:
+
+I used ChatGPT's explanations and code examples to develop and review the room-detail and availability-editing functionality. This included two PATCH endpoints, DTO validation, hotel-moderator authorization, overlap detection, and concurrency protection.
+
+I verified the functionality using 99 passing automated tests, 2 isolated MongoDB concurrency tests, Swagger API requests, and MongoDB Compass. I also tested invalid dates (400), unauthorized access (403), nonexistent availability ranges (404), and overlapping dates (409).
+
+The AI helped me understand partial updates, date-range comparisons, and concurrent database operations. Booking-related safeguards, including preserving existing reservations and their price snapshots, were identified as remaining integration work.
+Date: 09/11/2026
+Student: Mostafa Eltatawi
+AI Tool Used: ChatGPT (OpenAI)
+Project: Travel Planning & Booking Platform — Backend
+Related Requirements: HTL-06, HTL-04, HTL-05
+
+**Prompt / Question (summary of multi-turn discussion):**
+
+How can room date blocking and room deactivation be implemented safely in NestJS with MongoDB Atlas? How should the backend validate date ranges, prevent overlapping blocks during concurrent requests, enforce hotel moderator authorization, preserve room data when deactivating, and test these operations through automated tests, Swagger, and MongoDB Compass? Which requirements depend on the future hotel-booking module?
+
+**How AI Output Was Used:**
+
+Used the guidance to implement room date blocking and room deactivation using Mongoose conditional atomic updates, date validation, moderator authorization, and appropriate HTTP errors.
+
+Added unit tests and isolated MongoDB concurrency/integration tests. Verified the current changes with 115 passing regular tests, 4 passing isolated MongoDB tests, successful typechecking, linting, and build. Tested the endpoints using Swagger and inspected stored documents with MongoDB Compass.
+
+**Remaining Integration Requirements:**
+
+HTL-06 is not fully complete. Booking-conflict restrictions, deletion restricted to never-reserved rooms, and inactive-room exclusion from search must be completed during hotel-booking and search integration.
+
+Date: 09/11/2026
+AI Tool: ChatGPT (OpenAI)
+Related Requirements: HTL-09, HTL-10
+
+**Prompt / Question:**
+
+How can standard hotel check-in/check-out times and cancellation policy tiers be implemented professionally in NestJS and MongoDB? How can we validate times, enforce unique non-negative cancellation thresholds, calculate the correct refund percentage, restrict modifications to assigned hotel moderators, and test the implementation?
+
+**How AI Output Was Used:**
+
+AI-assisted guidance was used to create the hotel policy DTO, implement the policy update service, expose the moderator-protected PUT endpoint, and extend the existing hotel tests.
+
+The implementation reuses the shared cancellation-tier utilities and existing hotel schema.
+
+Verification included 123 passing unit tests, 4 passing MongoDB integration tests, successful typechecking, linting and build, followed by Swagger and MongoDB Compass verification.
+
+**Pending Integration:**
+
+The configured hotel policy must be integrated into booking summaries and cancellation/refund execution when HTL-16 and HTL-21 are implemented.
+
+Date: 09/11/2026
+
+AI Tool: ChatGPT (OpenAI)
+Related Requirements: HTL-11, HTL-12, HTL-15
+
+**Prompt / Question:**
+
+How can hotel search, advanced filtering, and room availability be implemented professionally in NestJS and MongoDB while meeting the project requirements? How can we search active hotels by destination, check-in/check-out dates, guest count, and room count; validate complete-stay availability; exclude blocked and inactive rooms; handle combined room occupancy; apply price and rating filters; calculate total stay prices; and ensure proper pagination, authorization, and integration with future booking functionality?
+
+**How AI Output Was Used:**
+
+AI-assisted technical guidance was used to design and implement the hotel search DTO, room availability validation logic, hotel search service, and public API endpoints for searching hotels and viewing available rooms.
+
+The implementation follows the existing NestJS architecture, reuses the hotel and room schemas, supports date-range validation and occupancy constraints, and preserves compatibility with previously implemented hotel features.
+
+Verification included **136 passing unit tests, 5 passing MongoDB integration tests**, successful typechecking, linting, and build, followed by Swagger and MongoDB Compass verification of search results, price and rating filters, blocked dates, and inactive-room exclusion.
+
+Booking-conflict checks involving confirmed reservations and pending payment holds were identified as dependencies for the upcoming hotel booking implementation.
+Date: 09/11/2026  
+AI Tool: ChatGPT (OpenAI)  
+Related Requirements: HTL-16, HTL-17, HTL-18
+
+**Prompt / Question:**
+
+How can a secure and reliable hotel booking system be implemented professionally in NestJS and MongoDB while integrating with existing hotel inventory and shared payment services? How can we validate multi-room reservations and guest occupancy, calculate and snapshot booking prices, prevent overlapping bookings through atomic MongoDB transactions, manage 10-minute payment holds, automatically release expired reservations, and confirm bookings safely after successful Stripe payments?
+
+**How AI Output Was Used:**
+
+AI-assisted technical consultation was used to design and implement the hotel booking module, reservation DTOs and schemas, atomic room reservation logic, booking lifecycle management, and integration with the existing hotel search and payment infrastructure.
+
+The implementation follows the project's NestJS architecture, shared booking status conventions, authentication and authorization requirements, and MongoDB transaction patterns.
+
+Verification included 146 passing unit tests, 6 passing isolated MongoDB integration tests, successful typechecking, linting, and production build. Swagger testing was also performed to validate the booking API behavior.
+
+Date: 10/11/2026
+
+Student: Mostafa Eltatawi
+
+AI Tool Used: ChatGPT (OpenAI)
+
+Related Requirement: HTL-20 — View Hotel Reservations
+
+**Prompt / Question (summary of multi-turn discussion):**
+
+How can I implement a secure hotel booking history feature in our existing NestJS and MongoDB backend? How should registered travellers view their own hotel reservations grouped into Upcoming, Past, and Cancelled, with booking reference, hotel information, reserved rooms, dates, guests, total price, and booking status?
+
+How can I implement filtering and pagination using our existing shared utilities, protect booking information from other users, reuse the existing booking details endpoint, and verify the functionality through unit tests, isolated MongoDB integration tests, and Swagger?
+
+**How AI Output Was Used:**
+
+AI-assisted guidance was used to implement the hotel booking history query DTO, booking listing service, and authenticated GET `/api/hotel-bookings` endpoint.
+
+The implementation supports Upcoming, Past, and Cancelled grouping, optional status filtering, pagination, and owner-based access restrictions. Existing booking details functionality was reused.
+
+Verification included **147 passing automated unit tests**, successful TypeScript and lint checks, and Swagger testing of all three booking groups.
+
+The isolated MongoDB integration test was extended to verify that confirmed, expired, and cancelled reservations appear in the appropriate booking history, and that other travellers cannot access another user's reservations.
+
+All changes were reviewed, committed as `45a437f`, and pushed to the HTL-20 feature branch.
+
+
+Date: 10/11/2026
+
+Student: Mostafa Eltatawi
+
+AI Tool Used: ChatGPT (OpenAI)
+
+Related Requirements: HTL-21, HTL-10, PAY-03
+
+**Prompt / Question (summary of multi-turn discussion):**
+
+How can I implement a secure hotel booking cancellation and refund system in our existing NestJS and MongoDB backend?
+
+How should registered travellers preview the refund calculated from the hotel's saved cancellation policy before confirming cancellation? How can we ensure that only the booking owner can cancel a Confirmed reservation before check-in, that the entire multi-room reservation is cancelled together, and that partial cancellation is not allowed?
+
+How can MongoDB transactions guarantee that updating the booking status, releasing all reserved rooms, and creating the refund record happen atomically? How should the implementation integrate with the existing PaymentsService and Stripe refund mechanism while preventing double cancellations and duplicate refunds?
+
+What unit tests and isolated MongoDB integration tests should verify refund calculations, ownership restrictions, room availability after cancellation, refund persistence, and transaction rollback?
+
+**How AI Output Was Used:**
+
+Used ChatGPT's explanations and implementation guidance to develop the hotel cancellation preview and cancellation execution functionality.
+
+Added GET `/api/hotel-bookings/:id/cancellation-preview` and POST `/api/hotel-bookings/:id/cancel`, including traveller authorization, ownership verification, saved cancellation-tier calculations, and check-in deadline validation.
+
+Implemented transactional cancellation that updates the entire booking, releases all reserved rooms, and queues the applicable refund using the existing PaymentsService. Stripe refund dispatch occurs after the database transaction commits.
+
+Added cancellation tracking to the hotel booking schema and extended the automated tests. Verification included **148 passing unit tests**, successful isolated MongoDB integration tests covering refund persistence and rollback, successful TypeScript, lint and production build checks, and confirmation that both endpoints appear in Swagger.
+
+Actual Stripe refund processing was not performed during testing; external payment requests were mocked to protect shared and external systems.
+
+
+Date: 11/11/2026
+
+Student: Mostafa Eltatawi
+
+AI Tool Used: ChatGPT (OpenAI)
+
+Related Requirements: HTL-06, HTL-08, HTL-22, HTL-23, HTL-24
+
+**Prompt / Question (summary of multi-turn discussion):**
+
+How can I professionally complete and integrate the remaining hotel management requirements in our existing NestJS and MongoDB backend while preserving previously implemented functionality?
+
+What is the best architectural approach for allowing hotel moderators to view reservations belonging only to their assigned hotel, including guest information, booking dates, reserved rooms, and reservation status?
+
+How should room status reporting distinguish between Available, Booked, and Blocked dates, and how can room deletion be restricted to rooms that have never been reserved without compromising booking history or data consistency?
+
+How can the hotel booking lifecycle support completed stays and allow registered travellers to submit one review per completed reservation, with ratings from 1 to 5, optional comments, and secure editing and deletion?
+
+What is the most reliable way to maintain accurate hotel average ratings and review counts after reviews are created, modified, or deleted, while providing public paginated reviews sorted from newest to oldest?
+
+How should these features be integrated with the existing hotel modules, authentication, MongoDB schemas, and booking services? What unit tests, database integration tests, authorization checks, and regression tests are necessary to verify the implementation?
+
+**How AI Output Was Used:**
+
+Used ChatGPT's architectural guidance, explanations, and generated code to implement the remaining hotel management functionality through new services, controllers, DTOs, schemas, and supporting utilities.
+
+Implemented moderator-scoped reservation viewing, room status reporting, protected room deletion, completed-stay review eligibility, review creation and management, public review listings, and hotel rating aggregation.
+
+Integrated these components into the existing HotelBookingsModule while preserving previously completed booking, cancellation, payment, and unrelated functionality.
+
+Used AI debugging guidance to resolve a TypeScript compatibility issue identified during verification.
+
+Verified the implementation with 148 passing existing unit tests, 10 passing new unit tests, 2 passing isolated MongoDB integration tests, successful TypeScript checking, linting, and production build. Confirmed successful backend startup and registration of all seven new endpoints in Swagger.
+
+Full manual acceptance testing against the shared application environment was not performed.
+
+Date: 2026-11-05
+Student: Kenzie (team leader)
+Tool: Claude
+Related Requirement: GEN-12, ACC-15, FLT-02
+Prompt:
+The project description was revised (official CSV reference datasets with IANA time zones and
+currencies from Countries.csv; new PATCH /api/admin/providers/:type/:id/deactivate|reactivate;
+updated endpoint requirement labels). Update the project for these changes and review what's new.
+How the output was used:
+Seeder now reads the official CSVs and keeps their ids (city_id, attraction_id); reference lookups
+accept those ids. Added the ACC-15 provider (de)activation endpoints for airlines with
+notifications, audit logging and an e2e test; airlines use active/inactive. Restored .env.example
+and updated the work split.
+Date: 2026-11-11
+Student: Omar (Person 5)
+Tool: Claude
+Related Requirement: ITN-01, ITN-03, ITN-05, ITN-07, ITN-08, ITN-09, ITN-10, ITN-12, ITN-14, ITN-16, ITN-18, ITN-20, ITN-21, ITN-25, ITN-26
+Prompt:
+I am Person 5 (Itineraries, Budgeting & Exchange Rates) and must finish my requirements today.
+Read the project PDF (section 8.8), docs/WORK_SPLIT.md and docs/CONVENTIONS.md and implement the
+Itineraries and ExchangeRates modules following the team's existing patterns, then explain the code.
+How the output was used:
+Generated the itineraries module (itinerary CRUD + visibility, embedded ordered days with derived
+day numbers/dates and city grouping, activities with images via MediaService, budget entries,
+intercity transport costs, converted budget summary, public search, clone with attribution,
+hotel/flight search from the itinerary) and the exchange-rates module (FXRatesAPI through the
+backend with a daily MongoDB cache, stale fallback and 503 FX_UNAVAILABLE). ITN-25 uses an
+ItineraryHooksService that HotelsModule registers with. Reviewed the code, added unit tests for the
+day logic and currency maths, and checked every endpoint appears in Swagger.
+
+Date: 2026-11-18
+Student: Person 6A
+Tool: ChatGPT
+Related Requirements: BLG-01 to BLG-10, BLG-12
+Prompt:
+Review the existing NestJS backend and help implement the Blog & Community requirements using the team's existing authentication, media, and database conventions.
+How the output was used:
+Used AI assistance to draft and integrate the Blog module schemas, DTOs, service, controllers, API documentation, and route registration. The student must review, test, and understand the implementation before submission.
+
+Date: 2026-11-19
+Student: Person 6B
+Tool: ChatGPT
+Related Requirements: GEN-09, GEN-10, ACC-13, ACC-14, ACC-15, ACC-16, ACC-17
+Prompt:
+Inspect the existing Travel Platform repository and implement Person 6B only: content reports and
+moderation, moderator creation, account listing/filtering, suspension/reactivation, and admin
+booking views. Reuse the existing Person 6A blog module and shared services, document the API, and
+work on a branch from the latest develop.
+How the output was used:
+Integrated a moderation report schema and admin endpoints with the existing NestJS auth, users,
+audit, notifications, bookings, and blog modules. Added hidden-content filtering to public blog
+reads and documented the endpoints and setup. Build and tests are to be recorded after validation.
+
+Date: 2026-11-20
+Student: Kenzie (team leader)
+Tool: Claude
+Related Requirements: BLG-01 to BLG-12, GEN-05, GEN-09, GEN-10, ACC-12, ACC-15, ACC-17, ITN-01, ITN-05, ITN-21, HTL-02, HTL-08, HTL-16, HTL-22, HTL-23
+Prompt:
+The backend should now be complete. Check that ALL the requirements are completed, that
+everything works, and give me a script to test the backend APIs.
+How the output was used:
+Audited every module against the requirement sheet and fixed the gaps found. Blog: one text index
+instead of three (MongoDB allows one), search by title, tags or author ordered by likes + comments,
+max 5 tags of 30 characters, 500-character comments in chronological order, idempotent likes with
+DELETE /posts/:id/like, counts and pagination on "my posts", author page with join date and public
+itineraries, PATCH/DELETE /comments/:id, deactivated authors hidden. Admin: reports for posts,
+comments, hotel reviews and public itineraries (once per item), direct hide/unhide/delete of any
+content, booking filters by status and date range, hotel deactivation wired into ACC-15. Hotels:
+official path aliases, available rooms on the details page when dates are given, hidden reviews
+excluded from the rating. Itineraries: 100-character titles, 60-day limit, keyword search over
+title/countries/cities, hidden flag. Merged the duplicate "test" script so all 168 unit tests run.
+Wrote an API smoke-test script, kept locally only (not committed). Verified with tsc, lint, unit tests and a
+dependency-injection boot check; reviewed every change.

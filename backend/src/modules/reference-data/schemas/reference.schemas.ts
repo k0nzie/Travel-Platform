@@ -2,16 +2,15 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument, Types, Schema as MongooseSchema } from 'mongoose';
 
 /**
- * Read-only reference data seeded at setup (GEN-12, FLT-02).
- * `externalId` keeps the identifier from the official course dataset so evaluation
- * records can be matched exactly.
+ * Read-only reference data seeded at setup from the official course datasets (GEN-12, FLT-02).
+ * Every record keeps the dataset's own identifier, which is what evaluation and other modules use:
+ *   Country.code ("EG"), City.code (city_id, "cairo"), Airport.iataCode ("CAI"),
+ *   Attraction.code (attraction_id, "att-1"), Currency.code ("EGP", from Countries.csv).
+ * ReferenceDataService accepts either that code or the Mongo _id wherever a record is looked up.
  */
 
 @Schema({ collection: 'countries', versionKey: false })
 export class Country {
-  @Prop({ index: true, sparse: true })
-  externalId?: string;
-
   /** ISO 3166-1 alpha-2, e.g. "EG" */
   @Prop({ required: true, unique: true, uppercase: true, trim: true })
   code: string;
@@ -24,8 +23,9 @@ export const CountrySchema = SchemaFactory.createForClass(Country);
 
 @Schema({ collection: 'cities', versionKey: false })
 export class City {
-  @Prop({ index: true, sparse: true })
-  externalId?: string;
+  /** Official city_id, e.g. "cairo". */
+  @Prop({ unique: true, sparse: true, lowercase: true, trim: true })
+  code?: string;
 
   @Prop({ required: true, trim: true })
   name: string;
@@ -51,9 +51,6 @@ CitySchema.index({ name: 1, countryCode: 1 }, { unique: true });
 
 @Schema({ collection: 'airports', versionKey: false })
 export class Airport {
-  @Prop({ index: true, sparse: true })
-  externalId?: string;
-
   /** IATA code, e.g. "CAI" */
   @Prop({ required: true, unique: true, uppercase: true, trim: true })
   iataCode: string;
@@ -66,6 +63,10 @@ export class Airport {
 
   @Prop({ required: true })
   cityName: string;
+
+  /** Official city_id of the airport's city, e.g. "cairo". */
+  @Prop({ lowercase: true, index: true })
+  cityCode?: string;
 
   @Prop({ required: true, uppercase: true, index: true })
   countryCode: string;
@@ -94,8 +95,9 @@ export const CurrencySchema = SchemaFactory.createForClass(Currency);
 
 @Schema({ collection: 'attractions', versionKey: false })
 export class Attraction {
-  @Prop({ index: true, sparse: true })
-  externalId?: string;
+  /** Official attraction_id, e.g. "att-1". */
+  @Prop({ unique: true, sparse: true, lowercase: true, trim: true })
+  code?: string;
 
   @Prop({ required: true, trim: true })
   name: string;
@@ -105,6 +107,10 @@ export class Attraction {
 
   @Prop()
   cityName?: string;
+
+  /** Official city_id, e.g. "cairo". */
+  @Prop({ lowercase: true, index: true })
+  cityCode?: string;
 
   @Prop({ uppercase: true, index: true })
   countryCode?: string;

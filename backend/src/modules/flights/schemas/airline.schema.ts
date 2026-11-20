@@ -3,9 +3,14 @@ import { HydratedDocument } from 'mongoose';
 import { validateBaggagePolicy, validateTiers } from '../flight-policy';
 import { CabinType } from './flight.schema';
 
+/**
+ * ACC-15: an admin deactivates / reactivates the airline itself (separate from suspending its
+ * moderator's account). Inactive airlines are hidden from search and cannot be booked; existing
+ * Confirmed bookings stay valid.
+ */
 export enum AirlineStatus {
   Active = 'active',
-  Suspended = 'suspended',
+  Inactive = 'inactive',
 }
 
 @Schema({ _id: false })

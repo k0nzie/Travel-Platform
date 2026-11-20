@@ -20,6 +20,18 @@ const paths: [string, string, string[]][] = [
   ['../payments/schemas/payment.schema', 'PaymentSchema', ['bookingId', 'userId']],
   ['../reference-data/schemas/reference.schemas', 'CitySchema', ['countryId']],
   ['../reference-data/schemas/reference.schemas', 'AirportSchema', ['cityId']],
+  [
+    '../itineraries/schemas/itinerary.schema',
+    'ItinerarySchema',
+    ['ownerId', 'days.cityId', 'clonedFrom.itineraryId', 'clonedFrom.ownerId'],
+  ],
+  ['../itineraries/schemas/activity.schema', 'ActivitySchema', ['itineraryId', 'dayId', 'ownerId', 'attractionId']],
+  ['../itineraries/schemas/budget-entry.schema', 'BudgetEntrySchema', ['itineraryId', 'dayId', 'ownerId']],
+  [
+    '../itineraries/schemas/transport-cost.schema',
+    'TransportCostSchema',
+    ['itineraryId', 'ownerId', 'fromCityId', 'toCityId'],
+  ],
 ];
 
 test('cross-module schema ObjectId paths are real ObjectId, not Mixed/String', () => {

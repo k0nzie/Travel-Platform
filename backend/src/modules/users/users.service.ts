@@ -122,6 +122,31 @@ export class UsersService {
     return this.deactivatedCache.ids;
   }
 
+  /** BLG-09: ids of active accounts whose name matches (search posts by author name). */
+  async findIdsByName(pattern: RegExp): Promise<Types.ObjectId[]> {
+    const docs = await this.userModel
+      .find({ name: pattern, status: { $ne: AccountStatus.Deactivated } }, { _id: 1 })
+      .limit(200)
+      .lean()
+      .exec();
+    return docs.map((d) => d._id as Types.ObjectId);
+  }
+
+  /** ACC-15: moderators assigned to a hotel or airline (they are notified when it is (de)activated). */
+  async findModeratorIds(providerType: ProviderType, providerId: string): Promise<string[]> {
+    const docs = await this.userModel
+      .find(
+        {
+          'moderatorAssignment.providerType': providerType,
+          'moderatorAssignment.providerId': new Types.ObjectId(providerId),
+        },
+        { _id: 1 },
+      )
+      .lean()
+      .exec();
+    return docs.map((d) => String(d._id));
+  }
+
   // ---------- writes ----------
 
   /**
