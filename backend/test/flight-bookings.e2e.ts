@@ -732,7 +732,7 @@ describe('flight bookings and payments', { concurrency: false }, () => {
     const search = () => api(`/flights/search?origin=CAI&destination=DXB&departureDate=${day}`);
     assert.ok((await search()).body.total >= 1, 'flight is listed while the airline is active');
 
-    // Only admins; unknown provider types are rejected; hotels plug in later (Person 4).
+    // Only admins; unknown provider types are rejected; hotels are supported (an airline id is not a hotel).
     assert.equal(
       (await api(`/admin/providers/airline/${airlineId}/deactivate`, { cookie: alice, method: 'PATCH' })).status,
       403,
@@ -742,7 +742,7 @@ describe('flight bookings and payments', { concurrency: false }, () => {
       400,
     );
     const hotel = await api(`/admin/providers/hotel/${airlineId}/deactivate`, { cookie: admin, method: 'PATCH' });
-    assert.equal(hotel.body.code, 'PROVIDER_TYPE_NOT_AVAILABLE');
+    assert.equal(hotel.status, 404);
 
     const off = await api(`/admin/providers/airline/${airlineId}/deactivate`, {
       cookie: admin,

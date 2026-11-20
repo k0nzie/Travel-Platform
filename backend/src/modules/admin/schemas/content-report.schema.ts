@@ -4,6 +4,8 @@ import { HydratedDocument, Schema as MongooseSchema, Types } from 'mongoose';
 export enum ReportContentType {
   Post = 'post',
   Comment = 'comment',
+  Review = 'review',
+  Itinerary = 'itinerary',
 }
 export enum ReportStatus {
   Pending = 'pending',
@@ -35,4 +37,5 @@ export class ContentReport {
 export type ContentReportDocument = HydratedDocument<ContentReport>;
 export const ContentReportSchema = SchemaFactory.createForClass(ContentReport);
 ContentReportSchema.index({ status: 1, createdAt: -1 });
-ContentReportSchema.index({ reporterId: 1, contentType: 1, contentId: 1 });
+// GEN-09: a user may report the same item only once, whatever the report's status.
+ContentReportSchema.index({ reporterId: 1, contentType: 1, contentId: 1 }, { unique: true });

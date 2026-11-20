@@ -1,4 +1,4 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional, OmitType } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { IsInt, IsMongoId, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
 import { PaginationQueryDto } from '../../../common/dto/pagination.dto';
@@ -39,3 +39,6 @@ export class UpdateHotelReviewDto {
 }
 
 export class HotelReviewsQueryDto extends PaginationQueryDto {}
+
+/** Body for POST /hotel-bookings/:id/review: the reservation comes from the path. */
+export class ReservationReviewDto extends OmitType(CreateHotelReviewDto, ['bookingId'] as const) {}

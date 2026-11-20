@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, UploadedFiles } from '@nestjs/common';
 
-import { ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiCookieAuth, ApiQuery, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { Role } from '../../common/constants/enums';
 import { CurrentUser, Public, Roles } from '../../common/decorators';
@@ -112,10 +112,25 @@ export class HotelsController {
     description:
       'Returns the hotel profile, photos, amenities, ' +
       'check-in/check-out times, cancellation policy, ' +
-      'and current rating summary.',
+      'and current rating summary. With checkIn and checkOut, also the rooms available for that stay.',
   })
-  getHotel(@Param('id', ParseObjectIdPipe) id: string) {
-    return this.hotelsService.findHotel(id);
+  @ApiQuery({ name: 'checkIn', required: false, example: '2026-12-01' })
+  @ApiQuery({ name: 'checkOut', required: false, example: '2026-12-04' })
+  async getHotel(
+    @Param('id', ParseObjectIdPipe) id: string,
+    @Query('checkIn') checkIn?: string,
+    @Query('checkOut') checkOut?: string,
+  ) {
+    const hotel = await this.hotelsService.findHotel(id);
+    if (!checkIn || !checkOut) return hotel;
+    // HTL-02: with dates, the details include the rooms available for that stay.
+    const available = await this.hotelSearchService.availableRooms(id, {
+      checkIn,
+      checkOut,
+      page: 1,
+      limit: 100,
+    } as AvailableHotelRoomsQueryDto);
+    return { ...hotel, checkIn, checkOut, nights: available.nights, availableRooms: available.items };
   }
 
   // ==================================================

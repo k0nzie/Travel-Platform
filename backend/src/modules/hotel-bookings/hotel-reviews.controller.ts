@@ -9,7 +9,7 @@ import { HotelReviewsService } from './hotel-reviews.service';
 
 @ApiTags('Hotel reviews')
 @ApiCookieAuth('access_token')
-@Controller('hotel-reviews')
+@Controller(['hotel-reviews', 'reviews'])
 export class HotelReviewsController {
   constructor(private readonly reviews: HotelReviewsService) {}
 

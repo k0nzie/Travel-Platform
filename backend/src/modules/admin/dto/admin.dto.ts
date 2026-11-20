@@ -1,6 +1,8 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsEmail, IsEnum, IsOptional, IsString, Length, Matches, MaxLength } from 'class-validator';
+import { IsDateString, IsEmail, IsEnum, IsIn, IsOptional, IsString, Length, Matches, MaxLength } from 'class-validator';
+import { BookingStatus } from '../../../common/constants/enums';
+import { PaginationQueryDto } from '../../../common/dto/pagination.dto';
 import { PASSWORD_REGEX, PASSWORD_RULE_MESSAGE, ProviderType } from '../../../common/constants/enums';
 import { ReportContentType } from '../schemas/content-report.schema';
 
@@ -30,6 +32,28 @@ export class CreateReportDto {
 }
 export class ResolveReportDto {
   @ApiProperty({ enum: ['dismiss', 'hide', 'delete'] }) @IsString() @Matches(/^(dismiss|hide|delete)$/) action:
-    'dismiss' | 'hide' | 'delete';
+    | 'dismiss'
+    | 'hide'
+    | 'delete';
   @ApiPropertyOptional({ maxLength: 1000 }) @IsOptional() @IsString() @MaxLength(1000) note?: string;
+}
+
+export class ModerationActionDto {
+  @ApiPropertyOptional({ maxLength: 1000 }) @IsOptional() @IsString() @MaxLength(1000) reason?: string;
+}
+
+/** ACC-17: all bookings, filterable by type, status and creation date range. */
+export class AdminBookingsQueryDto extends PaginationQueryDto {
+  @ApiPropertyOptional({ enum: ['flight', 'hotel'] }) @IsOptional() @IsIn(['flight', 'hotel']) type?:
+    | 'flight'
+    | 'hotel';
+  @ApiPropertyOptional({ enum: BookingStatus }) @IsOptional() @IsEnum(BookingStatus) status?: BookingStatus;
+  @ApiPropertyOptional({ example: '2026-01-01', description: 'Created on or after this date' })
+  @IsOptional()
+  @IsDateString()
+  from?: string;
+  @ApiPropertyOptional({ example: '2026-12-31', description: 'Created on or before this date (inclusive)' })
+  @IsOptional()
+  @IsDateString()
+  to?: string;
 }

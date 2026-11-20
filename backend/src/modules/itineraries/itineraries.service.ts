@@ -27,7 +27,7 @@ import { cloneInfo, derive, itinerarySummary } from './itinerary-response';
 import { Itinerary, ItineraryDocument, ItineraryVisibility } from './schemas/itinerary.schema';
 
 /** Upper bound on trip length, so one request cannot create an unbounded document. */
-export const MAX_DAYS = 365;
+export const MAX_DAYS = 60; // ITN-05
 
 /**
  * Itinerary CRUD + visibility (ITN-01, ITN-03, ITN-20), days (ITN-05, ITN-07, ITN-08, ITN-09),
@@ -119,6 +119,42 @@ export class ItinerariesService {
     return { deleted: true };
   }
 
+  // ---------- used by other modules ----------
+
+  /** BLG-12: an author's public itineraries for their author page. */
+  async listPublicByOwner(ownerId: string, page = 1, limit = 10) {
+    const result = await paginate(
+      this.itineraries,
+      { ownerId: new Types.ObjectId(ownerId), visibility: ItineraryVisibility.Public, hidden: { $ne: true } },
+      { page, limit, sort: { publishedAt: -1, _id: -1 } },
+    );
+    return { ...result, items: result.items.map((it: any) => itinerarySummary(it)) };
+  }
+
+  /** GEN-09: true when the itinerary exists and can be seen by others (public, not hidden). */
+  async isReportable(id: string) {
+    return !!(await this.itineraries.exists({
+      _id: id,
+      visibility: ItineraryVisibility.Public,
+      hidden: { $ne: true },
+    }));
+  }
+
+  /** GEN-10: admin hides / unhides an itinerary. Returns false when it does not exist. */
+  async setHiddenForModeration(id: string, hidden: boolean) {
+    const res = await this.itineraries.updateOne({ _id: id }, { $set: { hidden } }).exec();
+    return res.matchedCount === 1;
+  }
+
+  /** GEN-10: admin deletes an itinerary with its contents. Clones made by others are unaffected (ITN-01). */
+  async removeForModeration(id: string) {
+    const it = await this.itineraries.findById(id).select('_id').lean().exec();
+    if (!it) return false;
+    await this.items.removeAllContents(it._id);
+    await this.itineraries.deleteOne({ _id: it._id }).exec();
+    return true;
+  }
+
   // ---------- days: ITN-05, ITN-07, ITN-08, ITN-09 ----------
 
   async addDay(user: AuthUser, id: string, dto: AddDayDto) {
@@ -128,7 +164,7 @@ export class ItinerariesService {
     const city = await this.reference.resolveCity(dto.cityId);
     it.days.splice(index, 0, {
       cityId: city._id,
-      cityCode: city.code,
+      cityCode: city.code ?? String(city._id), // legacy cities without an official code
       cityName: city.name,
       countryCode: city.countryCode,
       title: dto.title,
@@ -147,7 +183,7 @@ export class ItinerariesService {
       const city = await this.reference.resolveCity(dto.cityId);
       Object.assign(day, {
         cityId: city._id,
-        cityCode: city.code,
+        cityCode: city.code ?? String(city._id), // legacy cities without an official code
         cityName: city.name,
         countryCode: city.countryCode,
       });
@@ -191,11 +227,19 @@ export class ItinerariesService {
     }
     const filter: Record<string, any> = {
       visibility: ItineraryVisibility.Public,
+      hidden: { $ne: true },
       ownerId: { $nin: await this.usersService.getDeactivatedUserIds() },
     };
     if (q.q) {
-      const rx = new RegExp(escapeRegex(q.q), 'i');
-      filter.$or = [{ title: rx }, { description: rx }];
+      // ITN-21: keyword matches the title, a country (code or name) or a city of the itinerary.
+      const rx = new RegExp(escapeRegex(q.q.trim()), 'i');
+      const countryCodes = (await this.reference.listCountries({ q: q.q.trim() })).map((c) => c.code);
+      filter.$or = [
+        { title: rx },
+        { countryCodes: { $in: countryCodes } },
+        { 'days.cityName': rx },
+        { 'days.cityCode': rx },
+      ];
     }
     if (q.country) filter.countryCodes = q.country;
     if (q.city) filter['days.cityId'] = (await this.reference.resolveCity(q.city))._id;
@@ -228,20 +272,21 @@ export class ItinerariesService {
   /** ITN-21: anyone (guests too) can view a public itinerary; private ones are 404. */
   async getPublic(id: string) {
     const it = await this.itineraries
-      .findOne({ _id: id, visibility: ItineraryVisibility.Public })
+      .findOne({ _id: id, visibility: ItineraryVisibility.Public, hidden: { $ne: true } })
       .populate({ path: 'ownerId', select: 'name status' })
       .lean()
       .exec();
     const owner: any = it?.ownerId;
     if (!it || !owner || owner.status === 'deactivated') throw new NotFoundException('Itinerary not found');
-    const detail = await this.detail({ ...it, ownerId: owner._id }, { includeBudgets: false });
+    // ITN-21: a public itinerary is viewed read-only with author, days, activities and budget.
+    const detail = await this.detail({ ...it, ownerId: owner._id }, { includeBudgets: true });
     return { ...detail, author: publicAuthor(owner) };
   }
 
   /** ITN-21: an independent private copy that keeps attribution to the original author. */
   async clone(user: AuthUser, id: string, dto: CloneItineraryDto) {
     const source = await this.itineraries
-      .findOne({ _id: id, visibility: ItineraryVisibility.Public })
+      .findOne({ _id: id, visibility: ItineraryVisibility.Public, hidden: { $ne: true } })
       .populate({ path: 'ownerId', select: 'name status' })
       .lean()
       .exec();

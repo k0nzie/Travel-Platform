@@ -36,7 +36,7 @@ export class HotelReviewsService {
   private async recalculate(hotelId: Types.ObjectId, session: ClientSession) {
     const [stats] = await this.reviews
       .aggregate<{ count: number; total: number }>([
-        { $match: { hotelId } },
+        { $match: { hotelId, hidden: { $ne: true } } },
         { $group: { _id: null, count: { $sum: 1 }, total: { $sum: '$rating' } } },
       ])
       .session(session)
@@ -83,7 +83,11 @@ export class HotelReviewsService {
         if (booking.status === BookingStatus.Confirmed) {
           const marked = await this.bookings
             .updateOne(
-              { _id: booking._id, status: BookingStatus.Confirmed, checkOut: { $lt: new Date().toISOString().slice(0, 10) } },
+              {
+                _id: booking._id,
+                status: BookingStatus.Confirmed,
+                checkOut: { $lt: new Date().toISOString().slice(0, 10) },
+              },
               { $set: { status: BookingStatus.Completed } },
               { session },
             )
@@ -91,8 +95,15 @@ export class HotelReviewsService {
           if (marked.modifiedCount !== 1) throw new ConflictException('Booking state changed; please retry');
         }
         const [created] = await this.reviews.create(
-          [{ bookingId: booking._id, hotelId: booking.hotelId, userId: new Types.ObjectId(user.id),
-            rating: dto.rating, review: dto.review?.trim() ?? '' }],
+          [
+            {
+              bookingId: booking._id,
+              hotelId: booking.hotelId,
+              userId: new Types.ObjectId(user.id),
+              rating: dto.rating,
+              review: dto.review?.trim() ?? '',
+            },
+          ],
           { session },
         );
         const rating = await this.recalculate(booking.hotelId, session);
@@ -100,7 +111,10 @@ export class HotelReviewsService {
       });
     } catch (error) {
       if ((error as any)?.code === 11000) {
-        throw new ConflictException({ message: 'This reservation already has a review', code: 'REVIEW_ALREADY_EXISTS' });
+        throw new ConflictException({
+          message: 'This reservation already has a review',
+          code: 'REVIEW_ALREADY_EXISTS',
+        });
       }
       throw error;
     }
@@ -122,8 +136,11 @@ export class HotelReviewsService {
       if (dto.rating !== undefined) changes.rating = dto.rating;
       if (dto.review !== undefined) changes.review = dto.review.trim();
       const updated = await this.reviews
-        .findOneAndUpdate({ _id: existing._id, userId: existing.userId }, { $set: changes },
-          { new: true, session, runValidators: true })
+        .findOneAndUpdate(
+          { _id: existing._id, userId: existing.userId },
+          { $set: changes },
+          { new: true, session, runValidators: true },
+        )
         .exec();
       if (!updated) throw new NotFoundException('Review not found');
       const rating = await this.recalculate(updated.hotelId, session);
@@ -150,12 +167,16 @@ export class HotelReviewsService {
   async listPublic(hotelId: string, query: HotelReviewsQueryDto) {
     const hotel = await this.hotels.findById(hotelId).select('name averageRating ratingsCount').lean().exec();
     if (!hotel) throw new NotFoundException('Hotel not found');
-    const paged = await paginate(this.reviews, { hotelId: new Types.ObjectId(hotelId) }, {
-      page: query.page,
-      limit: query.limit,
-      sort: { createdAt: -1, _id: -1 },
-      populate: { path: 'userId', select: 'name status' },
-    });
+    const paged = await paginate(
+      this.reviews,
+      { hotelId: new Types.ObjectId(hotelId), hidden: { $ne: true } },
+      {
+        page: query.page,
+        limit: query.limit,
+        sort: { createdAt: -1, _id: -1 },
+        populate: { path: 'userId', select: 'name status' },
+      },
+    );
     return {
       hotelId,
       hotelName: hotel.name,
@@ -171,6 +192,34 @@ export class HotelReviewsService {
         author: publicAuthor(r.userId),
       })),
     };
+  }
+
+  // ---------- moderation (GEN-09 / GEN-10, called by the admin module) ----------
+
+  async isReportable(reviewId: string) {
+    return !!(await this.reviews.exists({ _id: new Types.ObjectId(reviewId), hidden: { $ne: true } }));
+  }
+
+  /** Hide / unhide and recalculate the hotel rating. Returns false when the review does not exist. */
+  async setHiddenForModeration(reviewId: string, hidden: boolean) {
+    return this.connection.transaction(async (session) => {
+      const review = await this.reviews
+        .findByIdAndUpdate(reviewId, { $set: { hidden } }, { new: true, session })
+        .exec();
+      if (!review) return false;
+      await this.recalculate(review.hotelId, session);
+      return true;
+    });
+  }
+
+  /** Delete any review and recalculate the hotel rating. */
+  async removeForModeration(reviewId: string) {
+    return this.connection.transaction(async (session) => {
+      const review = await this.reviews.findByIdAndDelete(reviewId, { session }).exec();
+      if (!review) return false;
+      await this.recalculate(review.hotelId, session);
+      return true;
+    });
   }
 
   private toView(review: any) {

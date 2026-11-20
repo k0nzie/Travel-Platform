@@ -19,6 +19,10 @@ export class HotelReview {
   @Prop({ trim: true, maxlength: 1000, default: '' })
   review: string;
 
+  /** GEN-10: hidden by an administrator; excluded from the public list and the hotel rating. */
+  @Prop({ default: false, index: true })
+  hidden: boolean;
+
   createdAt?: Date;
   updatedAt?: Date;
 }

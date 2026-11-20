@@ -1,18 +1,11 @@
 import { MediaService } from '../media/media.service';
 import { MediaOwnerType } from '../media/schemas/media.schema';
 
-import {
-  ForbiddenException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 
-import {
-  ProviderType,
-  Role,
-} from '../../common/constants/enums';
+import { ProviderType, Role } from '../../common/constants/enums';
 import { AuthUser } from '../../common/interfaces/auth-user.interface';
 import { assertModerates } from '../../common/utils/access.util';
 
@@ -20,15 +13,9 @@ import { AuditService } from '../audit/audit.service';
 import { AuditAction } from '../audit/schemas/audit-log.schema';
 import { ReferenceDataService } from '../reference-data/reference-data.service';
 
-import {
-  CreateHotelDto,
-  UpdateHotelDto,
-} from './dto/hotels.dto';
+import { CreateHotelDto, UpdateHotelDto } from './dto/hotels.dto';
 
-import {
-  Hotel,
-  HotelDocument,
-} from './schemas/hotel.schema';
+import { Hotel, HotelDocument, HotelStatus } from './schemas/hotel.schema';
 import { validateTiers } from '../../common/utils/cancellation-tiers';
 import { PutHotelPoliciesDto } from './dto/hotel-policies.dto';
 
@@ -78,11 +65,7 @@ export class HotelsService {
   /**
    * HTL-01: A moderator can edit only their assigned hotel.
    */
-  async updateHotel(
-    user: AuthUser,
-    hotelId: string,
-    dto: UpdateHotelDto,
-  ) {
+  async updateHotel(user: AuthUser, hotelId: string, dto: UpdateHotelDto) {
     assertModerates(user, ProviderType.Hotel, hotelId);
 
     const changes: Record<string, unknown> = {};
@@ -116,14 +99,16 @@ export class HotelsService {
       changes.countryCode = city.countryCode;
     }
 
-    const hotel = await this.hotels.findByIdAndUpdate(
-      hotelId,
-      { $set: changes },
-      {
-        new: true,
-        runValidators: true,
-      },
-    ).exec();
+    const hotel = await this.hotels
+      .findByIdAndUpdate(
+        hotelId,
+        { $set: changes },
+        {
+          new: true,
+          runValidators: true,
+        },
+      )
+      .exec();
 
     if (!hotel) {
       throw new NotFoundException('Hotel not found');
@@ -131,142 +116,126 @@ export class HotelsService {
 
     return hotel;
   }
-/**
- * HTL-02: Retrieve a hotel's profile and photos.
- * Room availability and reviews will be added later.
- */
-async findHotel(hotelId: string) {
-  const hotel = await this.hotels
-    .findById(hotelId)
-    .lean()
-    .exec();
+  /**
+   * HTL-02: Retrieve a hotel's profile and photos.
+   * Room availability and reviews will be added later.
+   */
+  async findHotel(hotelId: string) {
+    const hotel = await this.hotels.findById(hotelId).lean().exec();
 
-  if (!hotel) {
-    throw new NotFoundException('Hotel not found');
+    if (!hotel) {
+      throw new NotFoundException('Hotel not found');
+    }
+
+    const photos = await this.media.list(MediaOwnerType.Hotel, hotelId);
+
+    return {
+      id: String(hotel._id),
+      name: hotel.name,
+      address: hotel.address,
+      cityId: String(hotel.cityId),
+      cityName: hotel.cityName,
+      countryCode: hotel.countryCode,
+      description: hotel.description ?? null,
+      starClass: hotel.starClass,
+      amenities: hotel.amenities,
+      status: hotel.status,
+      checkInTime: hotel.checkInTime,
+      checkOutTime: hotel.checkOutTime,
+      cancellationTiers: hotel.cancellationTiers,
+      averageRating: hotel.averageRating,
+      ratingsCount: hotel.ratingsCount,
+      photos,
+      createdAt: hotel.createdAt,
+      updatedAt: hotel.updatedAt,
+    };
+  }
+  /**
+   * HTL-01 / GEN-08:
+   * Upload photos to the moderator's assigned hotel.
+   */
+  async uploadImages(user: AuthUser, hotelId: string, files: Express.Multer.File[]) {
+    assertModerates(user, ProviderType.Hotel, hotelId);
+
+    const hotel = await this.hotels.findById(hotelId).exec();
+
+    if (!hotel) {
+      throw new NotFoundException('Hotel not found');
+    }
+
+    return this.media.saveImages({
+      files,
+      ownerType: MediaOwnerType.Hotel,
+      ownerId: hotelId,
+      uploadedBy: user.id,
+    });
   }
 
-  const photos = await this.media.list(
-    MediaOwnerType.Hotel,
-    hotelId,
-  );
+  /**
+   * HTL-01: Remove an image from the assigned hotel.
+   */
+  async removeImage(user: AuthUser, hotelId: string, imageId: string) {
+    assertModerates(user, ProviderType.Hotel, hotelId);
 
-  return {
-    id: String(hotel._id),
-    name: hotel.name,
-    address: hotel.address,
-    cityId: String(hotel.cityId),
-    cityName: hotel.cityName,
-    countryCode: hotel.countryCode,
-    description: hotel.description ?? null,
-    starClass: hotel.starClass,
-    amenities: hotel.amenities,
-    status: hotel.status,
-    checkInTime: hotel.checkInTime,
-    checkOutTime: hotel.checkOutTime,
-    cancellationTiers: hotel.cancellationTiers,
-    averageRating: hotel.averageRating,
-    ratingsCount: hotel.ratingsCount,
-    photos,
-    createdAt: hotel.createdAt,
-    updatedAt: hotel.updatedAt,
-  };
-}
-/**
- * HTL-01 / GEN-08:
- * Upload photos to the moderator's assigned hotel.
- */
-async uploadImages(
-  user: AuthUser,
-  hotelId: string,
-  files: Express.Multer.File[],
-) {
-  assertModerates(user, ProviderType.Hotel, hotelId);
+    const hotel = await this.hotels.findById(hotelId).exec();
 
-  const hotel = await this.hotels.findById(hotelId).exec();
+    if (!hotel) {
+      throw new NotFoundException('Hotel not found');
+    }
 
-  if (!hotel) {
-    throw new NotFoundException('Hotel not found');
+    return this.media.remove(MediaOwnerType.Hotel, hotelId, imageId);
   }
 
-  return this.media.saveImages({
-    files,
-    ownerType: MediaOwnerType.Hotel,
-    ownerId: hotelId,
-    uploadedBy: user.id,
-  });
-}
+  /**
+   * HTL-09/10: Set hotel check-in/out times and cancellation tiers.
+   *
+   * Uses the shared cancellation-tier validation rules.
+   */
+  async setPolicies(user: AuthUser, hotelId: string, dto: PutHotelPoliciesDto) {
+    // Only the moderator assigned to this hotel may update it.
+    assertModerates(user, ProviderType.Hotel, hotelId);
 
-/**
- * HTL-01: Remove an image from the assigned hotel.
- */
-async removeImage(
-  user: AuthUser,
-  hotelId: string,
-  imageId: string,
-) {
-  assertModerates(user, ProviderType.Hotel, hotelId);
+    // Validate tier uniqueness, thresholds and refund percentages.
+    validateTiers(dto.cancellationTiers);
 
-  const hotel = await this.hotels.findById(hotelId).exec();
+    // Store tiers in ascending threshold order.
+    const cancellationTiers = [...dto.cancellationTiers].sort((a, b) => a.minDays - b.minDays);
 
-  if (!hotel) {
-    throw new NotFoundException('Hotel not found');
-  }
-
-  return this.media.remove(
-    MediaOwnerType.Hotel,
-    hotelId,
-    imageId,
-  );
-}
-
-/**
- * HTL-09/10: Set hotel check-in/out times and cancellation tiers.
- *
- * Uses the shared cancellation-tier validation rules.
- */
-async setPolicies(
-  user: AuthUser,
-  hotelId: string,
-  dto: PutHotelPoliciesDto,
-) {
-  // Only the moderator assigned to this hotel may update it.
-  assertModerates(user, ProviderType.Hotel, hotelId);
-
-  // Validate tier uniqueness, thresholds and refund percentages.
-  validateTiers(dto.cancellationTiers);
-
-  // Store tiers in ascending threshold order.
-  const cancellationTiers = [...dto.cancellationTiers].sort(
-    (a, b) => a.minDays - b.minDays,
-  );
-
-  const hotel = await this.hotels
-    .findByIdAndUpdate(
-      hotelId,
-      {
-        $set: {
-          checkInTime: dto.checkInTime,
-          checkOutTime: dto.checkOutTime,
-          cancellationTiers,
+    const hotel = await this.hotels
+      .findByIdAndUpdate(
+        hotelId,
+        {
+          $set: {
+            checkInTime: dto.checkInTime,
+            checkOutTime: dto.checkOutTime,
+            cancellationTiers,
+          },
         },
-      },
-      {
-        new: true,
-        runValidators: true,
-      },
-    )
-    .exec();
+        {
+          new: true,
+          runValidators: true,
+        },
+      )
+      .exec();
 
-  if (!hotel) {
-    throw new NotFoundException('Hotel not found');
+    if (!hotel) {
+      throw new NotFoundException('Hotel not found');
+    }
+
+    return {
+      id: String(hotel._id),
+      checkInTime: hotel.checkInTime,
+      checkOutTime: hotel.checkOutTime,
+      cancellationTiers: hotel.cancellationTiers,
+    };
   }
 
-  return {
-    id: String(hotel._id),
-    checkInTime: hotel.checkInTime,
-    checkOutTime: hotel.checkOutTime,
-    cancellationTiers: hotel.cancellationTiers,
-  };
-}
-
+  /** ACC-15: admin deactivates / reactivates a hotel. null = not found, false = already in that state. */
+  async setHotelStatus(id: string, status: HotelStatus) {
+    const hotel = await this.hotels.findById(id).select('name status').lean().exec();
+    if (!hotel) return null;
+    if (hotel.status === status) return false;
+    await this.hotels.updateOne({ _id: hotel._id }, { $set: { status } }).exec();
+    return { id: String(hotel._id), name: hotel.name, status };
+  }
 }

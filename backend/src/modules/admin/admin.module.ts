@@ -4,6 +4,11 @@ import { AdminController, ContentReportsController } from './admin.controller';
 import { AdminService } from './admin.service';
 import { FlightsModule } from '../flights/flights.module';
 import { BlogModule } from '../blog/blog.module';
+import { HotelBookingsModule } from '../hotel-bookings/hotel-bookings.module';
+import { HotelsModule } from '../hotels/hotels.module';
+import { ItinerariesModule } from '../itineraries/itineraries.module';
+import { HotelReview, HotelReviewSchema } from '../hotel-bookings/schemas/hotel-review.schema';
+import { Itinerary, ItinerarySchema } from '../itineraries/schemas/itinerary.schema';
 import { UsersModule } from '../users/users.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { AuditModule } from '../audit/audit.module';
@@ -25,6 +30,9 @@ import { AdminProvidersService } from './admin-providers.service';
   imports: [
     FlightsModule,
     BlogModule,
+    HotelsModule,
+    HotelBookingsModule,
+    ItinerariesModule,
     UsersModule,
     NotificationsModule,
     AuditModule,
@@ -36,6 +44,8 @@ import { AdminProvidersService } from './admin-providers.service';
       { name: Post.name, schema: PostSchema },
       { name: Comment.name, schema: CommentSchema },
       { name: ContentReport.name, schema: ContentReportSchema },
+      { name: HotelReview.name, schema: HotelReviewSchema },
+      { name: Itinerary.name, schema: ItinerarySchema },
     ]),
   ],
   controllers: [AdminProvidersController, AdminController, ContentReportsController],
