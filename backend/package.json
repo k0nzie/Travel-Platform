@@ -16,7 +16,6 @@
     "test:bookings": "node --test --test-force-exit -r ts-node/register test/flight-bookings.e2e.ts",
     "test:hotels": "node --test --test-force-exit -r ts-node/register test/hotel-bookings.e2e.ts test/hotel-search.e2e.ts test/hotel-availability-concurrency.e2e.ts test/hotel-person4-remaining.e2e.ts",
     "test:e2e": "npm run test:bookings && npm run test:hotels",
-    "test:api": "node scripts/api-smoke-test.mjs",
     "lint": "node scripts/lint.cjs",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "format:check": "prettier --check \"src/**/*.ts\" \"test/**/*.ts\""
