@@ -275,12 +275,17 @@ async function main() {
   const admin = new Client('admin');
   let airlineId, hotelId, airlineMod, hotelMod;
   heading('Admin (ACC-13..ACC-17)');
+  let adminOk = false;
   if (!ADMIN_EMAIL || !ADMIN_PASSWORD) {
     skip('admin, flights and hotels sections', 'set ADMIN_EMAIL and ADMIN_PASSWORD');
   } else {
-    await check('admin login', [200, 201], () =>
+    adminOk = !!(await check('admin login', [200, 201], () =>
       admin.post('/auth/login', { email: ADMIN_EMAIL, password: ADMIN_PASSWORD }),
-    );
+    ));
+  }
+  if (ADMIN_EMAIL && ADMIN_PASSWORD && !adminOk) {
+    skip('admin, flights and hotels sections', 'admin login failed: use the ADMIN_EMAIL / ADMIN_PASSWORD from backend/.env');
+  } else if (adminOk) {
     await check('list accounts (ACC-14)', 200, () => admin.get('/admin/accounts?limit=5'), isPage);
     await check('filter accounts by role', 200, () => admin.get('/admin/accounts?role=user&limit=5'));
 
@@ -798,7 +803,7 @@ async function main() {
       await check('report a public itinerary', [200, 201], () =>
         bob.post('/reports', { contentType: 'itinerary', contentId: itnId, reason: 'Misleading itinerary' }),
       );
-    if (ADMIN_EMAIL) {
+    if (adminOk) {
       await check('admin lists reports', 200, () => admin.get('/admin/reports?status=pending'), isPage);
       const reportId = idOf(report?.data);
       if (reportId) {
@@ -833,7 +838,7 @@ async function main() {
   }
 
   // ---------------------------------------------------------------- providers
-  if (ADMIN_EMAIL && hotelId) {
+  if (adminOk && hotelId) {
     heading('Provider deactivation (ACC-15)');
     await check('deactivate hotel', 200, () =>
       admin.patch(`/admin/providers/hotel/${hotelId}/deactivate`, { reason: 'smoke test' }),
