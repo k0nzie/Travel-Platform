@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import {
+  IsBoolean,
   ArrayMaxSize,
   ArrayMinSize,
   ArrayUnique,
@@ -219,6 +220,17 @@ export class ReorderDaysDto {
 // ---------- context searches (ITN-25, ITN-26) ----------
 
 export class ItineraryHotelSearchDto extends PaginationQueryDto {
+  @ApiPropertyOptional({
+    example: 2,
+    minimum: 1,
+    description: 'ITN-25: which city group (1 = first stretch of days in one city). Takes precedence over city.',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  group?: number;
+
   @ApiPropertyOptional({ example: 'luxor', description: 'City of the itinerary; defaults to its first city' })
   @IsOptional()
   @Transform(trim)
@@ -249,6 +261,33 @@ export class ItineraryHotelSearchDto extends PaginationQueryDto {
 }
 
 export class ItineraryFlightSearchDto extends PaginationQueryDto {
+  @ApiPropertyOptional({
+    example: 'CAI',
+    description:
+      'ITN-26: origin airport (IATA code). Searches flights to any airport in the city of the first itinerary day.',
+  })
+  @IsOptional()
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim().toUpperCase() : value))
+  @IsString()
+  @MaxLength(24)
+  origin?: string;
+
+  @ApiPropertyOptional({ default: false, description: 'ITN-26: round trip (with origin)' })
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === 'true')
+  @IsBoolean()
+  roundTrip?: boolean = false;
+
+  @ApiPropertyOptional({ example: '2026-12-01', description: 'ITN-26: defaults to the itinerary start date' })
+  @IsOptional()
+  @Matches(DATE_ONLY, { message: 'departureDate must be YYYY-MM-DD' })
+  departureDate?: string;
+
+  @ApiPropertyOptional({ example: '2026-12-08', description: "ITN-26: defaults to the last day's date (round trip)" })
+  @IsOptional()
+  @Matches(DATE_ONLY, { message: 'returnDate must be YYYY-MM-DD' })
+  returnDate?: string;
+
   @ApiPropertyOptional({
     example: 1,
     minimum: 1,

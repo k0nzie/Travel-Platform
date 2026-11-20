@@ -387,7 +387,7 @@ async function main() {
         arrivalLocal: `${dep}T13:30`,
         currency: CURRENCY,
         cabins: [
-          { cabin: 'Economy', capacity: 20, price: 150 },
+          { cabin: 'Economy', capacity: 20, price: 150, freeBags: 1, maxWeightKg: 23 },
           { cabin: 'Business', capacity: 4, price: 600 },
         ],
       }),
@@ -398,6 +398,17 @@ async function main() {
     );
     if (flightId) {
       await check('flight details', 200, () => guest.get(`/flights/${flightId}`), hasNoMongoKeys);
+      await check(
+        'cabin has its own baggage allowance (FLT-04)',
+        200,
+        () => guest.get(`/flights/${flightId}`),
+        (d) => {
+          const economy = (d?.cabins ?? []).find((c) => c.cabin === 'Economy');
+          return economy?.baggageAllowance?.freeBags === 1 && economy?.baggageAllowance?.maxWeightKg === 23
+            ? null
+            : `baggageAllowance: ${JSON.stringify(economy?.baggageAllowance)}`;
+        },
+      );
       await check('airline details', 200, () => guest.get(`/airlines/${airlineId}`));
     }
   }
@@ -600,11 +611,13 @@ async function main() {
     const dayIds = days.map((x) => x.id ?? x._id).filter(Boolean);
     const dayId = dayIds[0];
     if (dayId) {
-      await check('add activity (ITN-07)', [200, 201], () =>
+      await check('add activity with a cost (ITN-10)', [200, 201], () =>
         alice.post(`/itineraries/${itnId}/days/${dayId}/activities`, {
           title: 'Museum visit',
           startTime: '10:00',
           endTime: '12:00',
+          costMinor: 1500,
+          costCurrency: CURRENCY,
         }),
       );
       await check('add budget entry (ITN-12)', [200, 201], () =>
@@ -628,9 +641,21 @@ async function main() {
         mode: 'train',
         amountMinor: 4000,
         currency: CURRENCY,
+        ...(dayIds[1] ? { dayId: dayIds[1] } : {}),
       }),
     );
-    await check('budget summary', 200, () => alice.get(`/itineraries/${itnId}/budget-summary?currency=${CURRENCY}`));
+    await check(
+      'budget summary: activity cost, groups with subtotals (ITN-09/14)',
+      200,
+      () => alice.get(`/itineraries/${itnId}/budget-summary?currency=${CURRENCY}`),
+      (d) => {
+        if (!dayId) return null;
+        if (d?.byCategoryMinor?.activities !== 1500) return `activities total ${d?.byCategoryMinor?.activities}`;
+        if (!Array.isArray(d?.cityGroups) || !d.cityGroups.every((g) => typeof g.subtotalMinor === 'number'))
+          return 'cityGroups with subtotalMinor missing';
+        return null;
+      },
+    );
     await check('my itineraries', 200, () => alice.get('/itineraries'), isPage);
     await check('public itinerary visible to guest', 200, () => guest.get(`/itineraries/public/${itnId}`));
     await check(
@@ -647,6 +672,17 @@ async function main() {
     );
     await check('hotel suggestions for itinerary', 200, () => alice.get(`/itineraries/${itnId}/hotels`));
     await check('flight suggestions for itinerary', [200, 400], () => alice.get(`/itineraries/${itnId}/flights`));
+    if (ap1) {
+      await check(
+        'round-trip flights from an origin airport (ITN-26)',
+        200,
+        () => alice.get(`/itineraries/${itnId}/flights?origin=${ap1.iataCode}&roundTrip=true`),
+        (d) => (d?.roundTrip === true && d?.departureDate ? null : `unexpected: ${JSON.stringify(d).slice(0, 200)}`),
+      );
+    }
+    await check('hotels for a chosen city group (ITN-25)', 200, () =>
+      alice.get(`/itineraries/${itnId}/hotels?group=1`),
+    );
   }
 
   // ---------------------------------------------------------------- blog
@@ -830,7 +866,9 @@ async function main() {
   const carol = await newUser('Carol');
   const cPost = await carol.post('/posts', { title: `Carol post ${RUN}`, content: 'Body', status: 'published' });
   const cPostId = idOf(cPost.data);
-  await check('delete my account', [200, 204], () => carol.req('DELETE', '/users/me', { password: PASSWORD, confirm: true }));
+  await check('delete my account', [200, 204], () =>
+    carol.req('DELETE', '/users/me', { password: PASSWORD, confirm: true }),
+  );
   if (cPostId) await check("deleted user's posts are hidden", 404, () => guest.get(`/posts/${cPostId}`));
   await check('deleted user cannot log in', [401, 403], () =>
     new Client('x').post('/auth/login', { email: carol.email, password: PASSWORD }),

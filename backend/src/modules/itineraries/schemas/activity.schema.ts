@@ -44,6 +44,13 @@ export class Activity {
   @Prop()
   attractionName?: string;
 
+  /** ITN-10: optional cost, counted under Activities in the budget (ITN-14). Minor units. */
+  @Prop({ min: 0, validate: Number.isInteger })
+  costMinor?: number;
+
+  @Prop({ uppercase: true, match: /^[A-Z]{3}$/ })
+  costCurrency?: string;
+
   createdAt?: Date;
   updatedAt?: Date;
 }

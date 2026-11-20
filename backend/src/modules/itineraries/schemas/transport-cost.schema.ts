@@ -40,6 +40,10 @@ export class TransportCost {
   @Prop({ type: String, enum: Object.values(TransportMode), required: true })
   mode: TransportMode;
 
+  /** ITN-16: the itinerary day this transport belongs to (optional). */
+  @Prop({ type: MongooseSchema.Types.ObjectId })
+  dayId?: Types.ObjectId;
+
   /** Optional travel date (date-only). */
   @Prop()
   travelDate?: Date;

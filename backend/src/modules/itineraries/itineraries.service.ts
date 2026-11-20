@@ -345,7 +345,15 @@ export class ItinerariesService {
     const { cityGroups } = derive(it.toObject());
     if (!cityGroups.length) throw new BadRequestException('Add days to the itinerary before searching hotels');
     let group = cityGroups[0];
-    if (q.city) {
+    if (q.group) {
+      if (q.group > cityGroups.length) {
+        throw new BadRequestException({
+          message: `This itinerary has ${cityGroups.length} city group(s)`,
+          errors: [{ field: 'group', messages: [`Must be between 1 and ${cityGroups.length}`] }],
+        });
+      }
+      group = cityGroups[q.group - 1];
+    } else if (q.city) {
       const city = await this.reference.resolveCity(q.city);
       const match = cityGroups.find((g) => g.cityId === String(city._id));
       if (!match) {
@@ -387,8 +395,9 @@ export class ItinerariesService {
    */
   async searchFlights(user: AuthUser, id: string, q: ItineraryFlightSearchDto) {
     const it = await this.items.ownedItinerary(user, id);
-    const { cityGroups } = derive(it.toObject());
+    const { cityGroups, days } = derive(it.toObject());
     if (!cityGroups.length) throw new BadRequestException('Add days to the itinerary before searching flights');
+    if (q.origin) return this.searchFlightsFromOrigin(q, cityGroups[0], days[0].date, days[days.length - 1].date, it);
 
     let fromCityId: string;
     let toGroup = cityGroups[0];
@@ -444,6 +453,64 @@ export class ItinerariesService {
         } as any);
         offers.push(...result.items);
       }
+    }
+    offers.sort(
+      (a, b) =>
+        a.price - b.price || new Date(a.outbound.departureAt).getTime() - new Date(b.outbound.departureAt).getTime(),
+    );
+    return { ...context, results: toPage(offers.slice((page - 1) * limit, page * limit), offers.length, page, limit) };
+  }
+
+  /**
+   * ITN-26: one-way or round-trip flights from a chosen origin airport to any airport in the city of
+   * the itinerary's first day. Outbound defaults to the start date, return to the last day's date.
+   * Reuses the normal flight search (FLT-11, FLT-12).
+   */
+  private async searchFlightsFromOrigin(
+    q: ItineraryFlightSearchDto,
+    firstGroup: { cityId: string; cityName: string },
+    firstDate: string,
+    lastDate: string,
+    it: { _id: unknown },
+  ) {
+    const origin = await this.reference.resolveAirport(q.origin!);
+    const toAirports = await this.reference.airportsInCity(firstGroup.cityId);
+    const departureDate = q.departureDate ?? firstDate;
+    const returnDate = q.roundTrip ? (q.returnDate ?? lastDate) : undefined;
+    if (returnDate && returnDate < departureDate) {
+      throw new BadRequestException({
+        message: 'returnDate must be on or after departureDate',
+        errors: [{ field: 'returnDate', messages: ['Must be on or after departureDate'] }],
+      });
+    }
+    const page = q.page ?? 1;
+    const limit = q.limit ?? 10;
+    const context = {
+      itineraryId: String(it._id),
+      origin: origin.iataCode,
+      to: { cityId: firstGroup.cityId, cityName: firstGroup.cityName, airports: toAirports.map((a) => a.iataCode) },
+      departureDate,
+      returnDate: returnDate ?? null,
+      roundTrip: !!returnDate,
+    };
+    const destinations = toAirports.filter((a) => a.iataCode !== origin.iataCode);
+    if (!destinations.length || departureDate < isoDay(todayUtc())) {
+      return { ...context, results: toPage([], 0, page, limit) };
+    }
+    const offers: any[] = [];
+    for (const destination of destinations) {
+      const result = await this.flights.search({
+        origin: origin.iataCode,
+        destination: destination.iataCode,
+        departureDate,
+        returnDate,
+        adults: q.adults ?? 1,
+        children: q.children ?? 0,
+        infants: q.infants ?? 0,
+        page: 1,
+        limit: 100,
+      } as any);
+      offers.push(...result.items);
     }
     offers.sort(
       (a, b) =>

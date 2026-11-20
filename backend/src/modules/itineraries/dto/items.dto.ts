@@ -1,6 +1,18 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
-import { IsEnum, IsInt, IsNotEmpty, IsOptional, IsString, Matches, Max, MaxLength, Min } from 'class-validator';
+import {
+  IsEnum,
+  IsInt,
+  IsMongoId,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  Matches,
+  Max,
+  MaxLength,
+  Min,
+  ValidateIf,
+} from 'class-validator';
 import { BudgetCategory } from '../schemas/budget-entry.schema';
 import { TransportMode } from '../schemas/transport-cost.schema';
 import { CURRENCY, DATE_ONLY, HHMM } from './itinerary.dto';
@@ -50,6 +62,27 @@ export class CreateActivityDto {
   @IsString()
   @MaxLength(100)
   attractionId?: string;
+
+  @ApiPropertyOptional({
+    example: 1500,
+    minimum: 0,
+    description: 'ITN-10: optional cost in minor units (counted under Activities)',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(MAX_AMOUNT_MINOR)
+  costMinor?: number;
+
+  @ApiPropertyOptional({
+    example: 'EGP',
+    description: "Currency of the cost; defaults to the itinerary's budget currency",
+  })
+  @ValidateIf((o) => o.costCurrency !== undefined)
+  @Transform(upper)
+  @Matches(CURRENCY, { message: 'costCurrency must be a 3-letter code' })
+  costCurrency?: string;
 }
 
 export class UpdateActivityDto extends PartialType(CreateActivityDto) {}
@@ -115,6 +148,11 @@ export class CreateTransportCostDto {
   @Transform(upper)
   @Matches(CURRENCY, { message: 'currency must be a 3-letter code' })
   currency: string;
+
+  @ApiPropertyOptional({ description: 'ITN-16: id of the itinerary day this transport belongs to' })
+  @IsOptional()
+  @IsMongoId()
+  dayId?: string;
 
   @ApiPropertyOptional({ example: '2027-03-04', description: 'Travel date, YYYY-MM-DD' })
   @IsOptional()

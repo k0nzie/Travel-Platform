@@ -65,8 +65,9 @@ export class FlightsInventoryAdapter implements FlightInventoryPort {
           },
           // No airline baggage policy yet means no free or extra bags can be promised.
           baggagePolicy: {
-            freeBags: allowance?.freeBags ?? 0,
-            maxWeightKg: allowance?.maxWeightKg ?? null,
+            // FLT-04: the flight cabin's own allowance first, else the airline's.
+            freeBags: cabin.freeBags ?? allowance?.freeBags ?? 0,
+            maxWeightKg: cabin.maxWeightKg ?? allowance?.maxWeightKg ?? null,
             maxExtraBagsPerPassenger: policy?.maxExtraBagsPerPassenger ?? 0,
             extraBagPriceMinor: policy ? toMinor(policy.extraBagPrice) : 0,
           },

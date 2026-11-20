@@ -245,7 +245,12 @@ export class FlightsService {
       const cabin = cabins.find((c) => c.cabin === change.cabin);
       if (!cabin)
         throw new BadRequestException(`Cabin ${change.cabin} not on this flight; add it with POST /flights/:id/cabins`);
-      Object.assign(cabin, { capacity: change.capacity ?? cabin.capacity, price: change.price ?? cabin.price });
+      Object.assign(cabin, {
+        capacity: change.capacity ?? cabin.capacity,
+        price: change.price ?? cabin.price,
+        freeBags: change.freeBags ?? cabin.freeBags,
+        maxWeightKg: change.maxWeightKg ?? cabin.maxWeightKg,
+      });
       validateCabin(cabin);
       if (cabin.held + cabin.booked > cabin.capacity)
         throw new ConflictException('Capacity is below seats already booked or held');
@@ -295,7 +300,19 @@ export class FlightsService {
         departureAt: { $gt: new Date() },
         'cabins.cabin': { $ne: dto.cabin },
       },
-      { $push: { cabins: { cabin: dto.cabin, capacity: dto.capacity, price: dto.price, held: 0, booked: 0 } } },
+      {
+        $push: {
+          cabins: {
+            cabin: dto.cabin,
+            capacity: dto.capacity,
+            price: dto.price,
+            freeBags: dto.freeBags,
+            maxWeightKg: dto.maxWeightKg,
+            held: 0,
+            booked: 0,
+          },
+        },
+      },
     );
   }
 
@@ -317,7 +334,14 @@ export class FlightsService {
         departureAt: { $gt: new Date() },
         cabins: old.cabins,
       },
-      { $set: { 'cabins.$[c].capacity': next.capacity, 'cabins.$[c].price': next.price } },
+      {
+        $set: {
+          'cabins.$[c].capacity': next.capacity,
+          'cabins.$[c].price': next.price,
+          ...(dto.freeBags !== undefined ? { 'cabins.$[c].freeBags': dto.freeBags } : {}),
+          ...(dto.maxWeightKg !== undefined ? { 'cabins.$[c].maxWeightKg': dto.maxWeightKg } : {}),
+        },
+      },
       { arrayFilters: [{ 'c._id': cabin._id }] },
     );
   }
