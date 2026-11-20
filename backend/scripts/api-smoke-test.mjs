@@ -167,6 +167,15 @@ async function main() {
   console.log(bold(`Travel Platform API smoke test → ${API}  (run ${RUN})`));
   const guest = new Client('guest');
 
+  try {
+    await guest.get('/health');
+  } catch {
+    console.error(red(`\nThe server is not running at ${API}.`));
+    console.error('Start it in another terminal first:  cd backend && npm run start:dev');
+    console.error('Or point the script elsewhere with API_URL=http://host:port/api');
+    process.exit(2);
+  }
+
   // ---------------------------------------------------------------- basics
   heading('Health & reference data (GEN-12)');
   await check('GET /health', 200, () => guest.get('/health'));
