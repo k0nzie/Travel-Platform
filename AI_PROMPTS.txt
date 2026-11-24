@@ -390,3 +390,20 @@ excluded from the rating. Itineraries: 100-character titles, 60-day limit, keywo
 title/countries/cities, hidden flag. Merged the duplicate "test" script so all 168 unit tests run.
 Wrote an API smoke-test script, kept locally only (not committed). Verified with tsc, lint, unit tests and a
 dependency-injection boot check; reviewed every change.
+
+Date: 2026-11-24
+Student: Kenzie (team leader)
+Tool: Claude
+Related Requirements: ACC-01, ACC-04, ACC-05, ACC-06, ACC-07a, ACC-08, ACC-09, ACC-10, ACC-11, ACC-12, ACC-19, GEN-01, GEN-02, GEN-03, GEN-04, GEN-05, GEN-08, GEN-14, GEN-15, GEN-16, GEN-17
+Prompt:
+Finish Part 1 of the frontend now, with a stable foundation: a consistent theme and UI elements
+that the other parts will use so the design stays consistent.
+How the output was used:
+Generated the Next.js (App Router) foundation in frontend/: design tokens in globals.css, a shared
+UI kit (buttons, form fields with backend error display, cards, the boarding-pass ticket, alerts,
+badges, tables, pagination, tabs, dialogs with a confirm hook, toasts, empty/loading/error states,
+image uploader), the API client with cookie-based auth and session refresh, server-side fetching
+helpers for SSR and ISR, RequireAuth for role-protected sections, and the Person 1 pages (home,
+login, register, forced and normal password change, profile, deactivation, notifications). Added a
+/ui style guide page, starter pages for every teammate's section, and frontend/README.md with the
+conventions. Reviewed the code, type-checked it and checked every page and interaction in a browser.

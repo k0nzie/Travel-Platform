@@ -1,0 +1,127 @@
+@import 'tailwindcss';
+
+/*
+ * Design tokens. Use these names in class names (bg-brand, text-ink-soft, border-line,
+ * rounded-card, font-display ...). Do not use raw hex colours or Tailwind's default palette
+ * (blue-500, gray-200 ...) in feature code: if a colour is missing, add a token here.
+ */
+@theme {
+  /* Type */
+  --font-sans: var(--font-body), ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-display: var(--font-display-face), 'Arial Narrow', ui-sans-serif, sans-serif;
+
+  /* Ink: text and the header bar */
+  --color-ink: #13233a;
+  --color-ink-soft: #4a5a6b;
+  --color-ink-faint: #7a8896;
+  --color-ink-inverse: #f4f7f6;
+
+  /* Surfaces */
+  --color-canvas: #f2f5f4;
+  --color-surface: #ffffff;
+  --color-sunken: #e8eeec;
+  --color-line: #d8e0de;
+  --color-line-strong: #b6c3c0;
+
+  /* Brand: lagoon teal, the colour of primary actions and links */
+  --color-brand: #0b7a75;
+  --color-brand-hover: #08625e;
+  --color-brand-soft: #dff1ef;
+  --color-brand-ink: #064a47;
+
+  /* Signal: boarding-pass amber, only for things that need attention (holds, pending) */
+  --color-signal: #f2a900;
+  --color-signal-soft: #fff3cf;
+  --color-signal-ink: #6e4a00;
+
+  /* Feedback */
+  --color-danger: #b42318;
+  --color-danger-hover: #931c13;
+  --color-danger-soft: #fdecea;
+  --color-success: #1d7a3e;
+  --color-success-soft: #e5f4ea;
+  --color-info: #2a5b9c;
+  --color-info-soft: #e7effa;
+
+  /* Shape: small controls are tighter than cards, pills are round */
+  --radius-control: 0.5rem;
+  --radius-card: 0.875rem;
+
+  /* Depth: borders do most of the work; shadow only for things that float */
+  --shadow-float: 0 12px 32px -12px rgb(19 35 58 / 0.28), 0 2px 6px -2px rgb(19 35 58 / 0.12);
+
+  /* Motion */
+  --animate-toast-in: toast-in 180ms ease-out;
+  --animate-fade-in: fade-in 140ms ease-out;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@layer base {
+  html {
+    color-scheme: light;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-feature-settings: 'tnum' 1;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    line-height: 1.2;
+    text-wrap: balance;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+
+  ::selection {
+    background: var(--color-brand-soft);
+    color: var(--color-brand-ink);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-brand);
+    outline-offset: 2px;
+  }
+
+  dialog::backdrop {
+    background: rgb(19 35 58 / 0.45);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
